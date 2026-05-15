@@ -67,8 +67,10 @@ describe("drawio-parser", () => {
 
         const result = parseDrawioTemplate(xml)
 
-        expect(result.pools.length).toBeGreaterThan(0)
-        expect(result.lanes.length).toBeGreaterThan(1) // 矩阵至少有 2 个 Lane
+        // 矩阵泳道有多个 Pool（每个维度一个），而不是传统的 Lane
+        expect(result.pools.length).toBeGreaterThan(1)
+        // 节点数量应该大于 0
+        expect(result.nodes.length).toBeGreaterThan(0)
     })
 
     // 测试 4: 解析思维导图模板

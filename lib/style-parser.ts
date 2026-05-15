@@ -120,9 +120,11 @@ function parseYamlSection(yamlContent: string): Record<string, any> {
             }
 
             if (value) {
-                // 简单值
+                // 简单值 - 尝试解析数字
                 const cleanValue = value.replace(/^["']|["']$/g, "")
-                result[key] = cleanValue
+                // 尝试转换为数字
+                const numValue = Number(cleanValue)
+                result[key] = !isNaN(numValue) && cleanValue !== "" ? numValue : cleanValue
                 _currentKey = key
             } else {
                 // 对象开始
@@ -151,19 +153,9 @@ function parseYamlSection(yamlContent: string): Record<string, any> {
                 if (cleanValue.endsWith("px")) {
                     cleanValue = cleanValue.replace("px", "")
                 }
-                // 处理负数
-                if (
-                    cleanValue.startsWith("-") &&
-                    !Number.isNaN(Number(cleanValue))
-                ) {
-                    // 保留负号
-                } else if (
-                    !Number.isNaN(Number(cleanValue)) &&
-                    cleanValue !== ""
-                ) {
-                    cleanValue = String(Number(cleanValue))
-                }
-                parent[key] = cleanValue
+                // 尝试转换为数字（保留数字类型）
+                const numValue = Number(cleanValue)
+                parent[key] = !isNaN(numValue) && cleanValue !== "" ? numValue : cleanValue
             } else {
                 parent[key] = {}
             }
