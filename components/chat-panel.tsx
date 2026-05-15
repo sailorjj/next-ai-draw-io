@@ -44,6 +44,9 @@ import { cn, formatXML, isRealDiagram } from "@/lib/utils"
 import type { ValidationState } from "./chat/ValidationCard"
 import { ChatMessageDisplay } from "./chat-message-display"
 import { DevXmlSimulator } from "./dev-xml-simulator"
+import { TemplateSelector, type TemplateFile } from "./template-selector"
+import { ProcessedTemplateDisplay } from "./processed-template-display"
+import { preprocessTemplate, generatePromptFromProcessed, type ProcessedTemplate } from "@/lib/template-preprocessor"
 
 // localStorage keys for persistence
 const STORAGE_SESSION_ID_KEY = "next-ai-draw-io-session-id"
@@ -179,6 +182,31 @@ export default function ChatPanel({
     const [vlmValidationEnabled, setVlmValidationEnabled] = useState(false)
     const [customSystemMessage, setCustomSystemMessage] = useState("")
     const [shouldFocusInput, setShouldFocusInput] = useState(false)
+
+    // Template related state
+    const [diagramTemplate, setDiagramTemplate] = useState<TemplateFile | undefined>()
+    const [styleTemplate, setStyleTemplate] = useState<TemplateFile | undefined>()
+    const [processedTemplate, setProcessedTemplate] = useState<ProcessedTemplate | null>(null)
+    const [useShapeLibrary, setUseShapeLibrary] = useState(true)
+
+    // Handle template selection
+    const handleDiagramSelect = (template: TemplateFile | undefined) => {
+        setDiagramTemplate(template)
+        if (template) {
+            const processed = preprocessTemplate(template.content, template.name, styleTemplate?.content, styleTemplate?.name)
+            setProcessedTemplate(processed)
+        } else {
+            setProcessedTemplate(null)
+        }
+    }
+
+    const handleStyleSelect = (template: TemplateFile | undefined) => {
+        setStyleTemplate(template)
+        if (diagramTemplate) {
+            const processed = preprocessTemplate(diagramTemplate.content, diagramTemplate.name, template?.content, template?.name)
+            setProcessedTemplate(processed)
+        }
+    }
 
     // Restore input from sessionStorage on mount (when ChatPanel remounts due to key change)
     useEffect(() => {
@@ -1410,6 +1438,33 @@ export default function ChatPanel({
                         quotaManager.showQuotaLimitToast(50, 50)
                     }
                 />
+            )}
+
+            {/* Template Selector */}
+            <div className="px-4 py-2 border-b border-border/20">
+                <TemplateSelector
+                    diagramTemplate={diagramTemplate}
+                    styleTemplate={styleTemplate}
+                    onDiagramSelect={handleDiagramSelect}
+                    onStyleSelect={handleStyleSelect}
+                    useShapeLibrary={useShapeLibrary}
+                    onUseShapeLibraryChange={setUseShapeLibrary}
+                />
+            </div>
+
+            {/* Processed Template Result */}
+            {processedTemplate && (
+                <div className="px-4 py-2 border-b border-border/20">
+                    <ProcessedTemplateDisplay
+                        diagramTemplateName={processedTemplate.diagramTemplateName}
+                        layout={processedTemplate.layout}
+                        nodes={processedTemplate.nodes}
+                        edges={processedTemplate.edges}
+                        styleVariables={processedTemplate.styleVariables}
+                        xmlStructure={processedTemplate.xmlStructure}
+                        summary={processedTemplate.summary}
+                    />
+                </div>
             )}
 
             {/* Input */}
