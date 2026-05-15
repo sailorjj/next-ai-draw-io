@@ -194,7 +194,11 @@ ${sampleEdges}
     const horizontalStack = pool?.style?.horizontalStack ?? 0
     const stackDesc = horizontalStack === 1 ? "水平" : "垂直"
 
-    const summary = `${horizontal === 1 ? "横向" : "竖向"}泳道(childLayout=${childLayout}, ${stackDesc}排列)，${template.lanes.length}个泳道`
+    // 判断是否为矩阵泳道（多个Pool，没有Lane）
+    const isMatrixSwimlane = template.pools.length > 1 && template.lanes.length === 0
+    const summary = isMatrixSwimlane
+        ? `矩阵泳道(${template.pools.length}个维度)`
+        : `${horizontal === 1 ? "横向" : "竖向"}泳道(childLayout=${childLayout}, ${stackDesc}排列)，${template.lanes.length}个泳道`
 
     // 样式变量
     const styleVariables = Object.entries(colorVariables).map(
