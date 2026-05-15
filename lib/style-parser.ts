@@ -173,8 +173,9 @@ export function parseStyleTemplate(mdContent: string): ParsedStyleTemplate {
         throw new Error("Invalid input: mdContent must be a non-empty string")
     }
 
-    // 提取 YAML frontmatter
-    const match = mdContent.match(/^---\n([\s\S]*?)\n---/)
+    // 提取 YAML frontmatter（支持 LF 和 CRLF）
+    const normalizedContent = mdContent.replace(/\r\n/g, "\n")
+    const match = normalizedContent.match(/^---\n([\s\S]*?)\n---/)
 
     if (!match) {
         throw new Error("Invalid style template: missing YAML frontmatter")
