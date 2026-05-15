@@ -873,9 +873,10 @@ export default function ChatPanel({
                     urlData,
                 )
 
-                // Add template info to the message if template is selected
+                // Add template info to the message if template is selected AND this is the first message
                 let fullText = userText
-                if (processedTemplate) {
+                if (processedTemplate && messages.length === 0) {
+                    // Only include template info on first message to avoid repetition
                     const templateInfo = generatePromptFromProcessed(processedTemplate)
                     fullText = `${userText}\n\n${templateInfo}`
                 }

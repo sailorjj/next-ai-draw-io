@@ -143,19 +143,36 @@ export function preprocessTemplate(
         })
         .join("\n")
 
-    // 节点示例（取前3个作为示例）
-    // 使用样式模板的颜色变量，如果没有则使用默认颜色
+    // 节点示例（优先选择开始/结束节点作为示例）
+    // 优先选择包含 S 或 E 的节点，如果没有则取前3个
     const defaultColors = colorVariables
-    const sampleNodes = template.nodes
-        .slice(0, 3)
+    const getPriorityNodes = () => {
+        const sNodes = template.nodes.filter(n => n.value === 'S' || n.value?.startsWith('开始'))
+        const eNodes = template.nodes.filter(n => n.value === 'E' || n.value?.includes('结束'))
+        const priority = [...sNodes, ...eNodes]
+        if (priority.length >= 2) {
+            return priority.slice(0, 3)
+        }
+        // 如果不够3个，补充其他节点
+        const otherIds = new Set(priority.map(p => p.id))
+        const others = template.nodes.filter(n => !otherIds.has(n.id)).slice(0, 3 - priority.length)
+        return [...priority, ...others]
+    }
+    const sampleNodes = getPriorityNodes()
         .map((node) => {
             const shape = node.style.shape
                 ? `shape=${node.style.shape}`
-                : "rounded=1;whiteSpace=wrap"
+                : node.value === 'S' || node.value?.startsWith('开始') || node.value === 'E' || node.value?.includes('结束')
+                    ? "ellipse;whiteSpace=wrap"
+                    : "rounded=1;whiteSpace=wrap"
             // 尝试使用模板中的颜色，如果节点有自己的颜色则使用，否则用默认颜色
             let fillColor = node.style.fillColor
                 ? replaceStyleVariables(node.style.fillColor, defaultColors)
-                : `fillColor=${defaultColors.surfaceCard || '#efe9de'}`
+                : (node.value === 'S' || node.value?.startsWith('开始')
+                    ? `fillColor=${defaultColors.success || '#5db872'}`
+                    : node.value === 'E' || node.value?.includes('结束')
+                        ? `fillColor=${defaultColors.error || '#c64545'}`
+                        : `fillColor=${defaultColors.surfaceCard || '#efe9de'}`)
             const style = [shape, fillColor].filter(Boolean).join(";")
             return `<mxCell id="${node.id}" value="${node.value}" style="${style}" vertex="1" parent="${node.parentId}">
   <mxGeometry x="60" y="30" width="70" height="37" as="geometry"/>
