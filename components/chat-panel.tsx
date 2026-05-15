@@ -873,8 +873,15 @@ export default function ChatPanel({
                     urlData,
                 )
 
+                // Add template info to the message if template is selected
+                let fullText = userText
+                if (processedTemplate) {
+                    const templateInfo = generatePromptFromProcessed(processedTemplate)
+                    fullText = `${userText}\n\n${templateInfo}`
+                }
+
                 // Add the combined text as the first part
-                parts.unshift({ type: "text", text: userText })
+                parts.unshift({ type: "text", text: fullText })
 
                 // Get previous XML from the last snapshot (before this message)
                 const snapshotKeys = Array.from(
