@@ -315,12 +315,10 @@ export function generatePromptFromProcessed(
     parts.push(`\n⚠️ 重要说明:`)
     parts.push(`- Pool和Lane的style需要加"swimlane;"前缀`)
     parts.push(`- 普通节点（如S/E/判断/流程节点）的style不需要"swimlane"前缀`)
-    parts.push(
-        `- 判断节点使用shape=mxgraph.flowchart.decision，连线用value="Yes"/"No"标记分支`,
-    )
-    parts.push(
-        `- 连线使用edgeStyle=orthogonalEdgeStyle，source和target指向正确的节点ID`,
-    )
+    parts.push(`- 判断节点使用shape=mxgraph.flowchart.decision，连线用value属性标记分支（如value="Yes"或value="No"）`)
+    parts.push(`- 连线是edge元素，value属性放在xml标签上，不要放在style中`)
+    parts.push(`- 连线使用edgeStyle=orthogonalEdgeStyle，source和target指向正确的节点ID`)
+    parts.push(`- 连线的parent设为Pool的ID，不是节点ID`)
 
     // 精简XML结构参考（包含节点和连线示例）
     parts.push(`\nXML结构参考 (Pool/Lane框架 + 节点/连线示例):`)
