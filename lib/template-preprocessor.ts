@@ -144,15 +144,18 @@ export function preprocessTemplate(
         .join("\n")
 
     // 节点示例（取前3个作为示例）
+    // 使用样式模板的颜色变量，如果没有则使用默认颜色
+    const defaultColors = colorVariables
     const sampleNodes = template.nodes
         .slice(0, 3)
         .map((node) => {
             const shape = node.style.shape
                 ? `shape=${node.style.shape}`
                 : "rounded=1;whiteSpace=wrap"
-            const fillColor = node.style.fillColor
-                ? `fillColor=${node.style.fillColor}`
-                : ""
+            // 尝试使用模板中的颜色，如果节点有自己的颜色则使用，否则用默认颜色
+            let fillColor = node.style.fillColor
+                ? replaceStyleVariables(node.style.fillColor, defaultColors)
+                : `fillColor=${defaultColors.surfaceCard || '#efe9de'}`
             const style = [shape, fillColor].filter(Boolean).join(";")
             return `<mxCell id="${node.id}" value="${node.value}" style="${style}" vertex="1" parent="${node.parentId}">
   <mxGeometry x="60" y="30" width="70" height="37" as="geometry"/>
