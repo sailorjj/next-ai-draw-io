@@ -914,6 +914,11 @@ export default function ChatPanel({
         async (sessionId: string) => {
             if (!sessionManager.isAvailable) return
 
+            // Reset template selection when switching sessions
+            setDiagramTemplate(undefined)
+            setStyleTemplate(undefined)
+            setProcessedTemplate(null)
+
             // Save current session before switching
             if (messages.length > 0) {
                 const sessionData = await buildSessionData({
@@ -962,6 +967,11 @@ export default function ChatPanel({
     )
 
     const handleNewChat = useCallback(async () => {
+        // Reset template selection
+        setDiagramTemplate(undefined)
+        setStyleTemplate(undefined)
+        setProcessedTemplate(null)
+
         // Save current session before creating new one
         if (sessionManager.isAvailable && messages.length > 0) {
             const sessionData = await buildSessionData({ withThumbnail: true })
