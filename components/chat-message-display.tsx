@@ -1207,6 +1207,26 @@ export function ChatMessageDisplay({
                                                                     part,
                                                                     partIndex,
                                                                 ) => {
+                                                                    // For user messages with template, skip the first text part (contains template info for AI)
+                                                                    if (
+                                                                        message.role ===
+                                                                            "user" &&
+                                                                        part.type ===
+                                                                            "text" &&
+                                                                        partIndex ===
+                                                                            0 &&
+                                                                        group.parts.filter(
+                                                                            (
+                                                                                p,
+                                                                            ) =>
+                                                                                p.type ===
+                                                                                "text",
+                                                                        )
+                                                                            .length >
+                                                                            1
+                                                                    ) {
+                                                                        return null // Skip first text part for user messages with template
+                                                                    }
                                                                     if (
                                                                         part.type ===
                                                                         "text"
