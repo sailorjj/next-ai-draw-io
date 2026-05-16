@@ -966,12 +966,20 @@ export function ChatMessageDisplay({
                                                     partType?.startsWith(
                                                         "tool-",
                                                     )
+                                                const isTemplatePart =
+                                                    partType === "template"
                                                 const isContentPart =
                                                     partType === "text" ||
-                                                    partType === "file" ||
-                                                    partType === "template"
+                                                    partType === "file"
 
                                                 if (isToolPart) {
+                                                    groups.push({
+                                                        type: "tool",
+                                                        parts: [part],
+                                                        startIndex: index,
+                                                    })
+                                                } else if (isTemplatePart) {
+                                                    // Template as separate group (like tool, displayed outside message bubble)
                                                     groups.push({
                                                         type: "tool",
                                                         parts: [part],
@@ -1001,6 +1009,45 @@ export function ChatMessageDisplay({
 
                                             return groups.map(
                                                 (group, groupIndex) => {
+                                                    // Check if this is a template part
+                                                    const firstPartType = group
+                                                        .parts[0]
+                                                        ?.type as string
+                                                    if (
+                                                        firstPartType ===
+                                                        "template"
+                                                    ) {
+                                                        const templateData = (
+                                                            group
+                                                                .parts[0] as unknown as {
+                                                                type: "template"
+                                                                data: {
+                                                                    templateInfo: string
+                                                                    diagramTemplateName: string
+                                                                    summary: string
+                                                                }
+                                                            }
+                                                        ).data
+                                                        return (
+                                                            <div
+                                                                key={`${message.id}-template-${group.startIndex}`}
+                                                            >
+                                                                <ProcessedTemplateDisplay
+                                                                    diagramTemplateName={
+                                                                        templateData.diagramTemplateName
+                                                                    }
+                                                                    layout={{}}
+                                                                    xmlStructure={
+                                                                        templateData.templateInfo
+                                                                    }
+                                                                    summary={
+                                                                        templateData.summary
+                                                                    }
+                                                                />
+                                                            </div>
+                                                        )
+                                                    }
+
                                                     if (group.type === "tool") {
                                                         const toolPart = group
                                                             .parts[0] as ToolPartLike
