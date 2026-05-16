@@ -1504,6 +1504,23 @@ export default function ChatPanel({
                 />
             </div>
 
+            {/* Processed Template Result - 顶部显示 */}
+            {processedTemplate && (
+                <div className="px-4 py-2 border-b border-border/20">
+                    <ProcessedTemplateDisplay
+                        diagramTemplateName={
+                            processedTemplate.diagramTemplateName
+                        }
+                        layout={processedTemplate.layout}
+                        nodes={processedTemplate.nodes}
+                        edges={processedTemplate.edges}
+                        styleVariables={processedTemplate.styleVariables}
+                        xmlStructure={processedTemplate.xmlStructure}
+                        summary={processedTemplate.summary}
+                    />
+                </div>
+            )}
+
             {/* Input */}
             <footer
                 className={`${isMobile ? "p-2" : "p-4"} border-t border-border/50 bg-card/50`}
