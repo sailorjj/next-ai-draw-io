@@ -682,9 +682,19 @@ export function ChatMessageDisplay({
             ) : messages.length === 0 ? null : (
                 <div className="py-4 px-4 space-y-4">
                     {messages.map((message, messageIndex) => {
+                        // For user message, get first text part only (for display)
+                        // Second text part is sent to AI, template part is collapsible card
                         const userMessageText =
                             message.role === "user"
-                                ? getMessageTextContent(message)
+                                ? (() => {
+                                      const textParts = message.parts?.filter(
+                                          (p) => p.type === "text",
+                                      )
+                                      return textParts?.[0]
+                                          ? (textParts[0] as { text: string })
+                                                .text
+                                          : ""
+                                  })()
                                 : ""
                         const isLastAssistantMessage =
                             message.role === "assistant" &&
