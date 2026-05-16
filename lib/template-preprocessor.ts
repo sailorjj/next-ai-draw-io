@@ -341,6 +341,18 @@ export function generatePromptFromProcessed(
         processed.styleVariables.forEach((s) => {
             parts.push(`  ${s.name} = ${s.value}`)
         })
+        // 重要：明确要求应用颜色到所有节点
+        parts.push(`\n🎨 颜色应用规则 (必须遵守):`)
+        parts.push(
+            `- 所有普通节点必须添加 fillColor 属性，使用样式变量中的颜色`,
+        )
+        parts.push(`- 普通流程节点使用 surfaceCard 或 canvas 颜色`)
+        parts.push(`- 判断/菱形节点使用 accentAmber 或 warning 颜色`)
+        parts.push(`- 开始(S)节点使用 success 颜色 (#5db872)`)
+        parts.push(`- 结束(E)节点使用 error 颜色 (#c64545)`)
+        parts.push(
+            `- 示例: style="rounded=1;whiteSpace=wrap;fillColor=#efe9de"`,
+        )
     }
 
     // 重要说明

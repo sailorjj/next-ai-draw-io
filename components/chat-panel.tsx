@@ -37,6 +37,11 @@ import { formatMessage } from "@/lib/i18n/utils"
 import { isPdfFile, isTextFile } from "@/lib/pdf-utils"
 import { sanitizeMessages } from "@/lib/session-storage"
 import { STORAGE_KEYS } from "@/lib/storage"
+import {
+    generatePromptFromProcessed,
+    type ProcessedTemplate,
+    preprocessTemplate,
+} from "@/lib/template-preprocessor"
 import type { UrlData } from "@/lib/url-utils"
 import { type FileData, useFileProcessor } from "@/lib/use-file-processor"
 import { useQuotaManager } from "@/lib/use-quota-manager"
@@ -44,9 +49,8 @@ import { cn, formatXML, isRealDiagram } from "@/lib/utils"
 import type { ValidationState } from "./chat/ValidationCard"
 import { ChatMessageDisplay } from "./chat-message-display"
 import { DevXmlSimulator } from "./dev-xml-simulator"
-import { TemplateSelector, type TemplateFile } from "./template-selector"
 import { ProcessedTemplateDisplay } from "./processed-template-display"
-import { preprocessTemplate, generatePromptFromProcessed, type ProcessedTemplate } from "@/lib/template-preprocessor"
+import { type TemplateFile, TemplateSelector } from "./template-selector"
 
 // localStorage keys for persistence
 const STORAGE_SESSION_ID_KEY = "next-ai-draw-io-session-id"
@@ -184,16 +188,26 @@ export default function ChatPanel({
     const [shouldFocusInput, setShouldFocusInput] = useState(false)
 
     // Template related state
-    const [diagramTemplate, setDiagramTemplate] = useState<TemplateFile | undefined>()
-    const [styleTemplate, setStyleTemplate] = useState<TemplateFile | undefined>()
-    const [processedTemplate, setProcessedTemplate] = useState<ProcessedTemplate | null>(null)
+    const [diagramTemplate, setDiagramTemplate] = useState<
+        TemplateFile | undefined
+    >()
+    const [styleTemplate, setStyleTemplate] = useState<
+        TemplateFile | undefined
+    >()
+    const [processedTemplate, setProcessedTemplate] =
+        useState<ProcessedTemplate | null>(null)
     const [useShapeLibrary, setUseShapeLibrary] = useState(true)
 
     // Handle template selection
     const handleDiagramSelect = (template: TemplateFile | undefined) => {
         setDiagramTemplate(template)
         if (template) {
-            const processed = preprocessTemplate(template.content, template.name, styleTemplate?.content, styleTemplate?.name)
+            const processed = preprocessTemplate(
+                template.content,
+                template.name,
+                styleTemplate?.content,
+                styleTemplate?.name,
+            )
             setProcessedTemplate(processed)
         } else {
             setProcessedTemplate(null)
@@ -203,7 +217,12 @@ export default function ChatPanel({
     const handleStyleSelect = (template: TemplateFile | undefined) => {
         setStyleTemplate(template)
         if (diagramTemplate) {
-            const processed = preprocessTemplate(diagramTemplate.content, diagramTemplate.name, template?.content, template?.name)
+            const processed = preprocessTemplate(
+                diagramTemplate.content,
+                diagramTemplate.name,
+                template?.content,
+                template?.name,
+            )
             setProcessedTemplate(processed)
         }
     }
@@ -877,7 +896,8 @@ export default function ChatPanel({
                 let fullText = userText
                 if (processedTemplate && messages.length === 0) {
                     // Only include template info on first message to avoid repetition
-                    const templateInfo = generatePromptFromProcessed(processedTemplate)
+                    const templateInfo =
+                        generatePromptFromProcessed(processedTemplate)
                     fullText = `${userText}\n\n${templateInfo}`
                 }
 
@@ -1444,6 +1464,7 @@ export default function ChatPanel({
                     onImproveWithSuggestions={handleImproveWithSuggestions}
                     onSendTemplate={handleSendTemplate}
                     currentInput={input}
+                    processedTemplate={processedTemplate}
                 />
             </main>
 
@@ -1469,21 +1490,6 @@ export default function ChatPanel({
                     onUseShapeLibraryChange={setUseShapeLibrary}
                 />
             </div>
-
-            {/* Processed Template Result */}
-            {processedTemplate && (
-                <div className="px-4 py-2 border-b border-border/20">
-                    <ProcessedTemplateDisplay
-                        diagramTemplateName={processedTemplate.diagramTemplateName}
-                        layout={processedTemplate.layout}
-                        nodes={processedTemplate.nodes}
-                        edges={processedTemplate.edges}
-                        styleVariables={processedTemplate.styleVariables}
-                        xmlStructure={processedTemplate.xmlStructure}
-                        summary={processedTemplate.summary}
-                    />
-                </div>
-            )}
 
             {/* Input */}
             <footer
