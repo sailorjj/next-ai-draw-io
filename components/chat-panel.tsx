@@ -893,16 +893,24 @@ export default function ChatPanel({
                 )
 
                 // Add template info to the message if template is selected AND this is the first message
-                let fullText = userText
+                // Template info is added as a separate part for collapsible display
                 if (processedTemplate && messages.length === 0) {
-                    // Only include template info on first message to avoid repetition
                     const templateInfo =
                         generatePromptFromProcessed(processedTemplate)
-                    fullText = `${userText}\n\n${templateInfo}`
+                    // Add template info as a separate part (will be displayed as collapsible card)
+                    parts.push({
+                        type: "template" as const,
+                        data: {
+                            templateInfo,
+                            diagramTemplateName:
+                                processedTemplate.diagramTemplateName,
+                            summary: processedTemplate.summary,
+                        },
+                    })
                 }
 
-                // Add the combined text as the first part
-                parts.unshift({ type: "text", text: fullText })
+                // Add user text as the first part
+                parts.unshift({ type: "text", text: userText })
 
                 // Get previous XML from the last snapshot (before this message)
                 const snapshotKeys = Array.from(

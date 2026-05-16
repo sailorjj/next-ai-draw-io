@@ -6,12 +6,12 @@ import { cn } from "@/lib/utils"
 
 export interface ProcessedTemplateDisplayProps {
     diagramTemplateName: string
-    layout: {
-        poolStyle: string // Pool的完整style属性字符串
-        laneStyles: string[] // Lane的完整style属性数组
-        idParentMap: { id: string; parent: string; value: string }[] // ID-parent关系
-        poolId: string
-        laneIds: string[]
+    layout?: {
+        poolStyle?: string // Pool的完整style属性字符串
+        laneStyles?: string[] // Lane的完整style属性数组
+        idParentMap?: { id: string; parent: string; value: string }[] // ID-parent关系
+        poolId?: string
+        laneIds?: string[]
     }
     nodes?: { id: string; value: string; parentId: string; shape?: string }[]
     edges?: {
@@ -21,20 +21,20 @@ export interface ProcessedTemplateDisplayProps {
         value?: string
         style: string
     }[]
-    styleVariables: { name: string; value: string }[]
+    styleVariables?: { name: string; value: string }[]
     xmlStructure: string
-    summary: string
+    summary?: string
     className?: string
 }
 
 export function ProcessedTemplateDisplay({
     diagramTemplateName,
-    layout,
+    layout = {},
     nodes = [],
     edges = [],
-    styleVariables,
+    styleVariables = [],
     xmlStructure,
-    summary,
+    summary = "",
     className,
 }: ProcessedTemplateDisplayProps) {
     const [isExpanded, setIsExpanded] = useState(false)

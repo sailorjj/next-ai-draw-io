@@ -965,13 +965,16 @@ export function ChatMessageDisplay({
                                             }[] = []
 
                                             parts.forEach((part, index) => {
+                                                const partType =
+                                                    part.type as string
                                                 const isToolPart =
-                                                    part.type?.startsWith(
+                                                    partType?.startsWith(
                                                         "tool-",
                                                     )
                                                 const isContentPart =
-                                                    part.type === "text" ||
-                                                    part.type === "file"
+                                                    partType === "text" ||
+                                                    partType === "file" ||
+                                                    partType === "template"
 
                                                 if (isToolPart) {
                                                     groups.push({
@@ -1313,6 +1316,44 @@ export function ChatMessageDisplay({
                                                                                         objectFit:
                                                                                             "contain",
                                                                                     }}
+                                                                                />
+                                                                            </div>
+                                                                        )
+                                                                    }
+                                                                    // Template info - 显示为折叠卡片
+                                                                    const partTypeForCheck =
+                                                                        part.type as string
+                                                                    if (
+                                                                        partTypeForCheck ===
+                                                                        "template"
+                                                                    ) {
+                                                                        const templateData =
+                                                                            (
+                                                                                part as {
+                                                                                    data: {
+                                                                                        templateInfo: string
+                                                                                        diagramTemplateName: string
+                                                                                        summary: string
+                                                                                    }
+                                                                                }
+                                                                            )
+                                                                                .data
+                                                                        return (
+                                                                            <div
+                                                                                key={`${message.id}-template-${group.startIndex}-${partIndex}`}
+                                                                                className="mt-2"
+                                                                            >
+                                                                                <ProcessedTemplateDisplay
+                                                                                    diagramTemplateName={
+                                                                                        templateData.diagramTemplateName
+                                                                                    }
+                                                                                    layout={{}}
+                                                                                    xmlStructure={
+                                                                                        templateData.templateInfo
+                                                                                    }
+                                                                                    summary={
+                                                                                        templateData.summary
+                                                                                    }
                                                                                 />
                                                                             </div>
                                                                         )
