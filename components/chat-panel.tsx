@@ -1505,22 +1505,7 @@ export default function ChatPanel({
                 />
             </div>
 
-            {/* Processed Template Result - 顶部显示 */}
-            {processedTemplate && (
-                <div className="px-4 py-2 border-b border-border/20">
-                    <ProcessedTemplateDisplay
-                        diagramTemplateName={
-                            processedTemplate.diagramTemplateName
-                        }
-                        layout={processedTemplate.layout}
-                        nodes={processedTemplate.nodes}
-                        edges={processedTemplate.edges}
-                        styleVariables={processedTemplate.styleVariables}
-                        xmlStructure={processedTemplate.xmlStructure}
-                        summary={processedTemplate.summary}
-                    />
-                </div>
-            )}
+            {/* 顶部预处理卡片已移除 - 信息在消息卡片中显示 */}
 
             {/* Input */}
             <footer

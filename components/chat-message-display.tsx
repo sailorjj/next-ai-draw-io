@@ -1059,7 +1059,6 @@ export function ChatMessageDisplay({
                                                                         {}
                                                                     }
                                                                     xmlStructure={
-                                                                        templateData.xmlStructure ||
                                                                         templateData.templateInfo
                                                                     }
                                                                     summary={
