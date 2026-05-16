@@ -160,13 +160,13 @@ export function preprocessTemplate(
         )
         const priority = [...sNodes, ...eNodes]
         if (priority.length >= 2) {
-            return priority.slice(0, 3)
+            return priority.slice(0, 2)
         }
-        // 如果不够3个，补充其他节点
+        // 如果不够2个，补充其他节点
         const otherIds = new Set(priority.map((p) => p.id))
         const others = template.nodes
             .filter((n) => !otherIds.has(n.id))
-            .slice(0, 3 - priority.length)
+            .slice(0, 2 - priority.length)
         return [...priority, ...others]
     }
     const sampleNodes = getPriorityNodes()
@@ -194,9 +194,9 @@ export function preprocessTemplate(
         })
         .join("\n")
 
-    // 连线示例（取前3条作为示例，特别是判断分支）
+    // 连线示例（取前2条作为示例，特别是判断分支）
     const sampleEdges = template.edges
-        .slice(0, 3)
+        .slice(0, 2)
         .map((edge) => {
             const valueAttr = edge.value ? ` value="${edge.value}"` : ""
             return `<mxCell id="${edge.id}" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;html=1;"${valueAttr} edge="1" parent="${poolId}" source="${edge.source}" target="${edge.target}">
@@ -367,9 +367,13 @@ export function generatePromptFromProcessed(
         `- 连线使用edgeStyle=orthogonalEdgeStyle，source和target指向正确的节点ID`,
     )
     parts.push(`- 连线的parent设为Pool的ID，不是节点ID`)
+    parts.push(
+        `- ⚠️ 不要被示例中的节点数量限制！XML示例只是参考样式，不要按样例数量生成`,
+    )
+    parts.push(`- 根据用户需求自行决定节点数量和流程，泳道只是布局参考`)
 
-    // 精简XML结构参考（包含节点和连线示例）
-    parts.push(`\nXML结构参考 (Pool/Lane框架 + 节点/连线示例):`)
+    // 精简XML结构参考（只包含1-2个示例）
+    parts.push(`\nXML结构参考 (仅样式参考，不要照搬数量):`)
     parts.push(processed.xmlStructure)
 
     parts.push("---")
