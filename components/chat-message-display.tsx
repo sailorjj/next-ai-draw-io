@@ -189,7 +189,6 @@ export function ChatMessageDisplay({
     onImproveWithSuggestions,
     onSendTemplate,
     currentInput = "",
-    processedTemplate,
 }: ChatMessageDisplayProps) {
     const dict = useDictionary()
     const { chartXML, loadDiagram: onDisplayChart } = useDiagram()
@@ -682,20 +681,6 @@ export function ChatMessageDisplay({
                 />
             ) : messages.length === 0 ? null : (
                 <div className="py-4 px-4 space-y-4">
-                    {/* 模板预处理结果 - 折叠卡片 */}
-                    {processedTemplate && (
-                        <ProcessedTemplateDisplay
-                            diagramTemplateName={
-                                processedTemplate.diagramTemplateName
-                            }
-                            layout={processedTemplate.layout}
-                            nodes={processedTemplate.nodes}
-                            edges={processedTemplate.edges}
-                            styleVariables={processedTemplate.styleVariables}
-                            xmlStructure={processedTemplate.xmlStructure}
-                            summary={processedTemplate.summary}
-                        />
-                    )}
                     {messages.map((message, messageIndex) => {
                         const userMessageText =
                             message.role === "user"

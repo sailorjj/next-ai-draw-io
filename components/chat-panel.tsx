@@ -897,7 +897,12 @@ export default function ChatPanel({
                 if (processedTemplate && messages.length === 0) {
                     const templateInfo =
                         generatePromptFromProcessed(processedTemplate)
-                    // Add template info as a separate part (will be displayed as collapsible card)
+                    // Send full text to AI (user text + template info)
+                    const fullText = `${userText}\n\n${templateInfo}`
+                    // But only display user text in the message, template as separate collapsible card
+                    // Override userText with fullText for sending to AI
+                    parts.unshift({ type: "text", text: fullText })
+                    // Add template display info as separate part
                     parts.push({
                         type: "template" as const,
                         data: {
@@ -907,10 +912,10 @@ export default function ChatPanel({
                             summary: processedTemplate.summary,
                         },
                     })
+                } else {
+                    // Add user text as the first part
+                    parts.unshift({ type: "text", text: userText })
                 }
-
-                // Add user text as the first part
-                parts.unshift({ type: "text", text: userText })
 
                 // Get previous XML from the last snapshot (before this message)
                 const snapshotKeys = Array.from(
@@ -1472,7 +1477,6 @@ export default function ChatPanel({
                     onImproveWithSuggestions={handleImproveWithSuggestions}
                     onSendTemplate={handleSendTemplate}
                     currentInput={input}
-                    processedTemplate={processedTemplate}
                 />
             </main>
 
