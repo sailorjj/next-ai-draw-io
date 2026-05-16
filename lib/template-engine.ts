@@ -25,6 +25,7 @@ export interface BusinessNode {
 }
 
 export interface BusinessData {
+    title?: string
     lanes: string[] // 泳道名称
     nodes: BusinessNode[] // 业务节点
     edges: { from: string; to: string; label?: string }[] // 业务连线
@@ -163,6 +164,7 @@ export function generateFromTemplate(options: GenerationOptions): string {
                 id: `edge-${idCounter++}`,
                 source: fromNodeId,
                 target: toNodeId,
+                geometry: { x: 0, y: 0, width: 0, height: 0 },
                 style: {
                     edgeStyle: "orthogonalEdgeStyle",
                     rounded: 0,
@@ -206,6 +208,7 @@ export function generateFromTemplate(options: GenerationOptions): string {
                 id: `edge-cross-${idCounter++}`,
                 source: sourceNodeId,
                 target: targetNodeId,
+                geometry: { x: 0, y: 0, width: 0, height: 0 },
                 style: {
                     edgeStyle: "orthogonalEdgeStyle",
                     rounded: 0,

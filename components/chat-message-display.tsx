@@ -33,9 +33,11 @@ import type { DiagramOperation, ToolPartLike } from "@/components/chat/types"
 import type { ValidationState } from "@/components/chat/ValidationCard"
 import { ValidationCard } from "@/components/chat/ValidationCard"
 import Image from "@/components/image-with-basepath"
+import { ProcessedTemplateDisplay } from "@/components/processed-template-display"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useDictionary } from "@/hooks/use-dictionary"
 import { getApiEndpoint } from "@/lib/base-path"
+import type { ProcessedTemplate } from "@/lib/template-preprocessor"
 import {
     applyDiagramOperations,
     convertToLegalXml,

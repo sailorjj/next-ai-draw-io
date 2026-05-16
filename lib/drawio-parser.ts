@@ -143,7 +143,7 @@ export function parseDrawioTemplate(xmlString: string): ParsedTemplate {
     }
 
     // 第一遍：收集所有 ID 到 Cell 的映射
-    const cellMap = new Map<string, Element>()
+    const cellMap = new Map<string, any>()
     for (let i = 0; i < allCells.length; i++) {
         const cell = allCells[i]
         const id = cell.getAttribute("id")
@@ -163,7 +163,7 @@ export function parseDrawioTemplate(xmlString: string): ParsedTemplate {
         const geometry = parseGeometry(cell)
 
         // 跳过根节点
-        if (id === "0" || id === "1") continue
+        if (!id || id === "0" || id === "1") continue
 
         // 判断类型
         const isVertex = cell.getAttribute("vertex") === "1"
@@ -250,7 +250,7 @@ export function parseDrawioTemplate(xmlString: string): ParsedTemplate {
                             if (pool) {
                                 pool.lanes.push(lane)
                             }
-                            return // 已处理，继续下一个
+                            continue // 已处理，继续下一个
                         }
                     }
                 }
@@ -266,8 +266,8 @@ export function parseDrawioTemplate(xmlString: string): ParsedTemplate {
             } else {
                 // 自身不是swimlane，就是普通节点
                 result.nodes.push({
-                    id,
-                    parentId: parent,
+                    id: id || "",
+                    parentId: parent || "",
                     value,
                     geometry,
                     style,
@@ -395,7 +395,7 @@ function parseStyle(styleStr: string): CellStyle {
 /**
  * 解析 geometry
  */
-function parseGeometry(cell: Element): Geometry {
+function parseGeometry(cell: any): Geometry {
     const geo = cell.getElementsByTagName("mxGeometry")[0]
     if (!geo) return {}
 

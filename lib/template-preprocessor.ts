@@ -79,7 +79,12 @@ export function preprocessTemplate(
     if (styleMd) {
         const parsedStyle = parseStyleTemplate(styleMd)
         if (parsedStyle.colors) {
-            colorVariables = parsedStyle.colors
+            // 将 StyleColor 转换为 Record<string, string>
+            colorVariables = Object.fromEntries(
+                Object.entries(parsedStyle.colors).filter(
+                    ([, v]) => typeof v === "string",
+                ),
+            ) as Record<string, string>
         }
     }
 
@@ -147,32 +152,41 @@ export function preprocessTemplate(
     // 优先选择包含 S 或 E 的节点，如果没有则取前3个
     const defaultColors = colorVariables
     const getPriorityNodes = () => {
-        const sNodes = template.nodes.filter(n => n.value === 'S' || n.value?.startsWith('开始'))
-        const eNodes = template.nodes.filter(n => n.value === 'E' || n.value?.includes('结束'))
+        const sNodes = template.nodes.filter(
+            (n) => n.value === "S" || n.value?.startsWith("开始"),
+        )
+        const eNodes = template.nodes.filter(
+            (n) => n.value === "E" || n.value?.includes("结束"),
+        )
         const priority = [...sNodes, ...eNodes]
         if (priority.length >= 2) {
             return priority.slice(0, 3)
         }
         // 如果不够3个，补充其他节点
-        const otherIds = new Set(priority.map(p => p.id))
-        const others = template.nodes.filter(n => !otherIds.has(n.id)).slice(0, 3 - priority.length)
+        const otherIds = new Set(priority.map((p) => p.id))
+        const others = template.nodes
+            .filter((n) => !otherIds.has(n.id))
+            .slice(0, 3 - priority.length)
         return [...priority, ...others]
     }
     const sampleNodes = getPriorityNodes()
         .map((node) => {
             const shape = node.style.shape
                 ? `shape=${node.style.shape}`
-                : node.value === 'S' || node.value?.startsWith('开始') || node.value === 'E' || node.value?.includes('结束')
-                    ? "ellipse;whiteSpace=wrap"
-                    : "rounded=1;whiteSpace=wrap"
+                : node.value === "S" ||
+                    node.value?.startsWith("开始") ||
+                    node.value === "E" ||
+                    node.value?.includes("结束")
+                  ? "ellipse;whiteSpace=wrap"
+                  : "rounded=1;whiteSpace=wrap"
             // 尝试使用模板中的颜色，如果节点有自己的颜色则使用，否则用默认颜色
-            let fillColor = node.style.fillColor
+            const fillColor = node.style.fillColor
                 ? replaceStyleVariables(node.style.fillColor, defaultColors)
-                : (node.value === 'S' || node.value?.startsWith('开始')
-                    ? `fillColor=${defaultColors.success || '#5db872'}`
-                    : node.value === 'E' || node.value?.includes('结束')
-                        ? `fillColor=${defaultColors.error || '#c64545'}`
-                        : `fillColor=${defaultColors.surfaceCard || '#efe9de'}`)
+                : node.value === "S" || node.value?.startsWith("开始")
+                  ? `fillColor=${defaultColors.success || "#5db872"}`
+                  : node.value === "E" || node.value?.includes("结束")
+                    ? `fillColor=${defaultColors.error || "#c64545"}`
+                    : `fillColor=${defaultColors.surfaceCard || "#efe9de"}`
             const style = [shape, fillColor].filter(Boolean).join(";")
             return `<mxCell id="${node.id}" value="${node.value}" style="${style}" vertex="1" parent="${node.parentId}">
   <mxGeometry x="60" y="30" width="70" height="37" as="geometry"/>
@@ -215,7 +229,8 @@ ${sampleEdges}
     const stackDesc = horizontalStack === 1 ? "水平" : "垂直"
 
     // 判断是否为矩阵泳道（多个Pool，没有Lane）
-    const isMatrixSwimlane = template.pools.length > 1 && template.lanes.length === 0
+    const isMatrixSwimlane =
+        template.pools.length > 1 && template.lanes.length === 0
     const summary = isMatrixSwimlane
         ? `矩阵泳道(${template.pools.length}个维度)`
         : `${horizontal === 1 ? "横向" : "竖向"}泳道(childLayout=${childLayout}, ${stackDesc}排列)，${template.lanes.length}个泳道`
@@ -332,9 +347,13 @@ export function generatePromptFromProcessed(
     parts.push(`\n⚠️ 重要说明:`)
     parts.push(`- Pool和Lane的style需要加"swimlane;"前缀`)
     parts.push(`- 普通节点（如S/E/判断/流程节点）的style不需要"swimlane"前缀`)
-    parts.push(`- 判断节点使用shape=mxgraph.flowchart.decision，连线用value属性标记分支（如value="Yes"或value="No"）`)
+    parts.push(
+        `- 判断节点使用shape=mxgraph.flowchart.decision，连线用value属性标记分支（如value="Yes"或value="No"）`,
+    )
     parts.push(`- 连线是edge元素，value属性放在xml标签上，不要放在style中`)
-    parts.push(`- 连线使用edgeStyle=orthogonalEdgeStyle，source和target指向正确的节点ID`)
+    parts.push(
+        `- 连线使用edgeStyle=orthogonalEdgeStyle，source和target指向正确的节点ID`,
+    )
     parts.push(`- 连线的parent设为Pool的ID，不是节点ID`)
 
     // 精简XML结构参考（包含节点和连线示例）

@@ -4,6 +4,7 @@
  */
 
 export interface StyleColor {
+    hex?: string
     primary: string
     primaryActive: string
     primaryDisabled: string
@@ -124,7 +125,10 @@ function parseYamlSection(yamlContent: string): Record<string, any> {
                 const cleanValue = value.replace(/^["']|["']$/g, "")
                 // 尝试转换为数字
                 const numValue = Number(cleanValue)
-                result[key] = !isNaN(numValue) && cleanValue !== "" ? numValue : cleanValue
+                result[key] =
+                    !isNaN(numValue) && cleanValue !== ""
+                        ? numValue
+                        : cleanValue
                 _currentKey = key
             } else {
                 // 对象开始
@@ -155,7 +159,10 @@ function parseYamlSection(yamlContent: string): Record<string, any> {
                 }
                 // 尝试转换为数字（保留数字类型）
                 const numValue = Number(cleanValue)
-                parent[key] = !isNaN(numValue) && cleanValue !== "" ? numValue : cleanValue
+                parent[key] =
+                    !isNaN(numValue) && cleanValue !== ""
+                        ? numValue
+                        : cleanValue
             } else {
                 parent[key] = {}
             }
@@ -207,17 +214,13 @@ export function styleToDrawioStyle(
 ): Record<string, string> {
     const style: Record<string, string> = {}
 
-    // 颜色映射 - 优先使用 fillColor，否则用 canvas
-    if (parsed.colors.fillColor) {
-        style.fillColor = parsed.colors.fillColor
-    } else if (parsed.colors.canvas) {
+    // 颜色映射 - 使用 canvas 作为背景色
+    if (parsed.colors.canvas) {
         style.fillColor = parsed.colors.canvas
     }
 
-    // 描边颜色 - 优先使用 ink
-    if (parsed.colors.strokeColor) {
-        style.strokeColor = parsed.colors.strokeColor
-    } else if (parsed.colors.ink) {
+    // 描边颜色 - 使用 ink
+    if (parsed.colors.ink) {
         style.strokeColor = parsed.colors.ink
     }
 
