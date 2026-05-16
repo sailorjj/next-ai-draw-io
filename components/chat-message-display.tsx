@@ -682,18 +682,23 @@ export function ChatMessageDisplay({
             ) : messages.length === 0 ? null : (
                 <div className="py-4 px-4 space-y-4">
                     {messages.map((message, messageIndex) => {
-                        // For user message, get first text part only (for display)
-                        // Second text part is sent to AI, template part is collapsible card
+                        // For user message, display the second text part (user text only)
+                        // First text part contains full text (with template info) for AI
+                        // Second text part contains only user text for display
                         const userMessageText =
                             message.role === "user"
                                 ? (() => {
                                       const textParts = message.parts?.filter(
                                           (p) => p.type === "text",
                                       )
-                                      return textParts?.[0]
-                                          ? (textParts[0] as { text: string })
+                                      // Prefer second text part (user text only), fallback to first
+                                      return textParts?.[1]
+                                          ? (textParts[1] as { text: string })
                                                 .text
-                                          : ""
+                                          : textParts?.[0]
+                                            ? (textParts[0] as { text: string })
+                                                  .text
+                                            : ""
                                   })()
                                 : ""
                         const isLastAssistantMessage =
@@ -1017,17 +1022,30 @@ export function ChatMessageDisplay({
                                                         firstPartType ===
                                                         "template"
                                                     ) {
-                                                        const templateData = (
+                                                        const templatePart =
                                                             group
                                                                 .parts[0] as unknown as {
                                                                 type: "template"
                                                                 data: {
                                                                     templateInfo: string
+                                                                    xmlStructure?: string
                                                                     diagramTemplateName: string
                                                                     summary: string
+                                                                    layout?: {
+                                                                        poolStyle?: string
+                                                                        laneStyles?: string[]
+                                                                        idParentMap?: {
+                                                                            id: string
+                                                                            parent: string
+                                                                            value: string
+                                                                        }[]
+                                                                        poolId?: string
+                                                                        laneIds?: string[]
+                                                                    }
                                                                 }
                                                             }
-                                                        ).data
+                                                        const templateData =
+                                                            templatePart.data
                                                         return (
                                                             <div
                                                                 key={`${message.id}-template-${group.startIndex}`}
@@ -1036,8 +1054,12 @@ export function ChatMessageDisplay({
                                                                     diagramTemplateName={
                                                                         templateData.diagramTemplateName
                                                                     }
-                                                                    layout={{}}
+                                                                    layout={
+                                                                        templateData.layout ||
+                                                                        {}
+                                                                    }
                                                                     xmlStructure={
+                                                                        templateData.xmlStructure ||
                                                                         templateData.templateInfo
                                                                     }
                                                                     summary={
@@ -1369,13 +1391,25 @@ export function ChatMessageDisplay({
                                                                         partTypeForCheck ===
                                                                         "template"
                                                                     ) {
-                                                                        const templateData =
+                                                                        const templatePartData =
                                                                             (
                                                                                 part as {
                                                                                     data: {
                                                                                         templateInfo: string
+                                                                                        xmlStructure?: string
                                                                                         diagramTemplateName: string
                                                                                         summary: string
+                                                                                        layout?: {
+                                                                                            poolStyle?: string
+                                                                                            laneStyles?: string[]
+                                                                                            idParentMap?: {
+                                                                                                id: string
+                                                                                                parent: string
+                                                                                                value: string
+                                                                                            }[]
+                                                                                            poolId?: string
+                                                                                            laneIds?: string[]
+                                                                                        }
                                                                                     }
                                                                                 }
                                                                             )
@@ -1387,14 +1421,18 @@ export function ChatMessageDisplay({
                                                                             >
                                                                                 <ProcessedTemplateDisplay
                                                                                     diagramTemplateName={
-                                                                                        templateData.diagramTemplateName
+                                                                                        templatePartData.diagramTemplateName
                                                                                     }
-                                                                                    layout={{}}
+                                                                                    layout={
+                                                                                        templatePartData.layout ||
+                                                                                        {}
+                                                                                    }
                                                                                     xmlStructure={
-                                                                                        templateData.templateInfo
+                                                                                        templatePartData.xmlStructure ||
+                                                                                        templatePartData.templateInfo
                                                                                     }
                                                                                     summary={
-                                                                                        templateData.summary
+                                                                                        templatePartData.summary
                                                                                     }
                                                                                 />
                                                                             </div>

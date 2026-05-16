@@ -907,9 +907,11 @@ export default function ChatPanel({
                         type: "template" as const,
                         data: {
                             templateInfo,
+                            xmlStructure: processedTemplate.xmlStructure,
                             diagramTemplateName:
                                 processedTemplate.diagramTemplateName,
                             summary: processedTemplate.summary,
+                            layout: processedTemplate.layout,
                         },
                     })
                 } else {
