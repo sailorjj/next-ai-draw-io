@@ -899,10 +899,11 @@ export default function ChatPanel({
                         generatePromptFromProcessed(processedTemplate)
                     // Send full text to AI (user text + template info)
                     const fullText = `${userText}\n\n${templateInfo}`
-                    // But only display user text in the message, template as separate collapsible card
-                    // Override userText with fullText for sending to AI
-                    parts.unshift({ type: "text", text: fullText })
-                    // Add template display info as separate part
+                    // First text part is sent to AI (includes everything)
+                    parts.push({ type: "text", text: fullText })
+                    // Second text part is displayed to user (only user text)
+                    parts.unshift({ type: "text", text: userText })
+                    // Add template display info as separate part (collapsible card)
                     parts.push({
                         type: "template" as const,
                         data: {
