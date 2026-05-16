@@ -148,8 +148,8 @@ export function preprocessTemplate(
         })
         .join("\n")
 
-    // 节点示例（优先选择开始/结束节点作为示例）
-    // 优先选择包含 S 或 E 的节点，如果没有则取前3个
+    // 节点示例（优先选择开始/结束/判断节点作为示例）
+    // 优先选择 S、E 和判断(菱形)节点
     const defaultColors = colorVariables
     const getPriorityNodes = () => {
         const sNodes = template.nodes.filter(
@@ -158,16 +158,34 @@ export function preprocessTemplate(
         const eNodes = template.nodes.filter(
             (n) => n.value === "E" || n.value?.includes("结束"),
         )
-        const priority = [...sNodes, ...eNodes]
-        if (priority.length >= 2) {
-            return priority.slice(0, 2)
+        // 判断节点（菱形）
+        const decisionNodes = template.nodes.filter(
+            (n) =>
+                n.style?.shape?.includes("decision") ||
+                n.style?.shape?.includes("rhombus") ||
+                n.value?.includes("判断") ||
+                n.value?.includes("?"),
+        )
+        // 收集优先级: S > 判断 > E
+        const priority = [...sNodes, ...decisionNodes, ...eNodes]
+        // 去重
+        const seen = new Set<string>()
+        const unique: typeof priority = []
+        for (const n of priority) {
+            if (!seen.has(n.id)) {
+                seen.add(n.id)
+                unique.push(n)
+            }
+        }
+        if (unique.length >= 2) {
+            return unique.slice(0, 2)
         }
         // 如果不够2个，补充其他节点
-        const otherIds = new Set(priority.map((p) => p.id))
+        const otherIds = new Set(unique.map((p) => p.id))
         const others = template.nodes
             .filter((n) => !otherIds.has(n.id))
-            .slice(0, 2 - priority.length)
-        return [...priority, ...others]
+            .slice(0, 2 - unique.length)
+        return [...unique, ...others]
     }
     const sampleNodes = getPriorityNodes()
         .map((node) => {
