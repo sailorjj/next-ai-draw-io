@@ -148,10 +148,9 @@ export function preprocessTemplate(
         })
         .join("\n")
 
-    // 节点示例（优先选择开始/结束/判断节点作为示例）
-    // 优先选择 S、E 和判断(菱形)节点
+    // 节点示例（选择多种类型：开始/判断/常规/结束）
     const defaultColors = colorVariables
-    const getPriorityNodes = () => {
+    const getSampleNodes = () => {
         const sNodes = template.nodes.filter(
             (n) => n.value === "S" || n.value?.startsWith("开始"),
         )
@@ -166,9 +165,21 @@ export function preprocessTemplate(
                 n.value?.includes("判断") ||
                 n.value?.includes("?"),
         )
-        // 收集优先级: S > 判断 > E
-        const priority = [...sNodes, ...decisionNodes, ...eNodes]
-        // 去重
+        // 常规流程节点（不是 S/E/判断）
+        const normalNodes = template.nodes.filter(
+            (n) =>
+                !sNodes.includes(n) &&
+                !eNodes.includes(n) &&
+                !decisionNodes.includes(n),
+        )
+
+        // 收集：优先 S、判断、常规、E，去重后最多取4个
+        const priority = [
+            ...sNodes,
+            ...decisionNodes,
+            ...normalNodes,
+            ...eNodes,
+        ]
         const seen = new Set<string>()
         const unique: typeof priority = []
         for (const n of priority) {
@@ -177,17 +188,9 @@ export function preprocessTemplate(
                 unique.push(n)
             }
         }
-        if (unique.length >= 2) {
-            return unique.slice(0, 2)
-        }
-        // 如果不够2个，补充其他节点
-        const otherIds = new Set(unique.map((p) => p.id))
-        const others = template.nodes
-            .filter((n) => !otherIds.has(n.id))
-            .slice(0, 2 - unique.length)
-        return [...unique, ...others]
+        return unique.slice(0, 4)
     }
-    const sampleNodes = getPriorityNodes()
+    const sampleNodes = getSampleNodes()
         .map((node) => {
             const shape = node.style.shape
                 ? `shape=${node.style.shape}`
@@ -212,9 +215,15 @@ export function preprocessTemplate(
         })
         .join("\n")
 
-    // 连线示例（取前2条作为示例，特别是判断分支）
-    const sampleEdges = template.edges
-        .slice(0, 2)
+    // 连线示例（优先选择带分支文字的连线，其次普通连线）
+    const getSampleEdges = () => {
+        // 优先选择有 value 的连线（判断分支）
+        const branchEdges = template.edges.filter((e) => e.value)
+        const normalEdges = template.edges.filter((e) => !e.value)
+        // 取2条分支 + 1条普通
+        return [...branchEdges.slice(0, 2), ...normalEdges.slice(0, 1)]
+    }
+    const sampleEdges = getSampleEdges()
         .map((edge) => {
             const valueAttr = edge.value ? ` value="${edge.value}"` : ""
             return `<mxCell id="${edge.id}" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;html=1;"${valueAttr} edge="1" parent="${poolId}" source="${edge.source}" target="${edge.target}">
