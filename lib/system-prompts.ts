@@ -123,6 +123,7 @@ CRITICAL RULES:
 3. ALL mxCell elements must be siblings - NEVER nest mxCell inside another mxCell
 4. Use unique sequential IDs starting from "2"
 5. Set parent="1" for top-level shapes, or parent="<container-id>" for grouped elements
+6. **ESCAPE SPECIAL CHARACTERS IN ATTRIBUTE VALUES**: Use &amp;quot; for double quotes, &amp;lt; for less-than, &amp;gt; for greater-than, &amp;amp; for ampersand. Example: value=&amp;quot;text with &amp;quot;nested quotes&amp;quot;&amp;quot;
 
 Shape (vertex) example:
 \`\`\`xml

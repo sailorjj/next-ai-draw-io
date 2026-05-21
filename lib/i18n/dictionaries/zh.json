@@ -44,6 +44,7 @@
         "clearConversation": "清除对话",
         "diagramHistory": "图表历史",
         "saveDiagram": "保存图表",
+        "formatDiagram": "自动排列",
         "uploadFile": "上传文件（图片、PDF、文本）",
         "minimalStyle": "简约",
         "styledMode": "精致",

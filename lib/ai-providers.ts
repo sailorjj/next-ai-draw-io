@@ -1293,7 +1293,7 @@ export function getAIModel(overrides?: ClientOverrides): ModelConfig {
                 overrides?.apiKey,
                 overrides?.baseUrl,
                 resolveBaseUrlEnv(overrides, "KIMI_BASE_URL"),
-                PROVIDER_INFO["kimi"]?.defaultBaseUrl,
+                PROVIDER_INFO.kimi?.defaultBaseUrl,
             )
             // Use createDeepSeek to properly handle reasoning_content for Kimi
             // thinking models (e.g., kimi-k2.6). Kimi's API uses the same
@@ -1372,12 +1372,13 @@ export function supportsImageInput(modelId: string): boolean {
     }
 
     // Qwen text models (not vision variants like qwen-vl)
-    // Qwen3.5 series (qwen3.5, qwen3.5-plus, qwen3.5-flash) natively support image input
+    // Qwen3.5+ series (qwen3.5, qwen3.5-plus, qwen3.5-flash, qwen3.6, qwen3.6-plus) natively support image input
     // QvQ (Qwen Visual QA) models are vision models — exclude them even when prefixed with "qwen/"
     if (
         lowerModelId.includes("qwen") &&
         !hasVisionIndicator &&
         !lowerModelId.includes("qwen3.5") &&
+        !lowerModelId.includes("qwen3.6") &&
         !lowerModelId.includes("qvq")
     ) {
         return false

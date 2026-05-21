@@ -7,7 +7,51 @@ import type {
 } from "@/components/chat/ValidationCard"
 import type { ValidationResult } from "@/lib/diagram-validator"
 import { formatValidationFeedback } from "@/lib/diagram-validator"
-import { isMxCellXmlComplete, wrapWithMxFile } from "@/lib/utils"
+import {
+    applyAutoLayout,
+    isMxCellXmlComplete,
+    wrapWithMxFile,
+} from "@/lib/utils"
+
+/**
+ * Detect if XML content appears truncated even when structurally complete.
+ * This catches cases where the model stopped mid-generation at a valid boundary.
+ *
+ * Heuristics:
+ * 1. XML ends right after </mxCell> or /> with no closing wrapper tags
+ * 2. The last cell is a leaf node (not a container) but the diagram seems large
+ *    (e.g., 50+ cells) and the last cell has no following content
+ */
+function isLikelyContentTruncated(xml: string): boolean {
+    const trimmed = xml.trimEnd()
+    if (!trimmed) return false
+
+    // Check if ends right after a cell tag (suggesting more cells were coming)
+    const endsAfterCell =
+        trimmed.endsWith("</mxCell>") || trimmed.endsWith("/>")
+
+    if (!endsAfterCell) return false
+
+    // Count cells to see if this is a large diagram that might be incomplete
+    const cellCount = (xml.match(/<mxCell\s/g) || []).length
+    if (cellCount < 10) return false // Small diagrams are likely complete
+
+    // Check if there are any closing wrapper tags after the last cell
+    // Extract content after the last </mxCell> or />
+    const lastCellEnd = Math.max(
+        trimmed.lastIndexOf("</mxCell>"),
+        trimmed.lastIndexOf("/>"),
+    )
+    const afterLastCell = trimmed.slice(lastCellEnd + 9).trim()
+
+    // If there's nothing after the last cell (or just whitespace), it's suspicious
+    // for a large diagram - the model likely stopped mid-generation
+    if (afterLastCell === "" && cellCount >= 20) {
+        return true
+    }
+
+    return false
+}
 
 const DEBUG = process.env.NODE_ENV === "development"
 
@@ -127,7 +171,9 @@ export function useDiagramToolHandlers({
         toolCall: ToolCall,
         addToolOutput: AddToolOutputFn,
     ) => {
-        const { xml } = toolCall.input as { xml: string }
+        const input = toolCall.input as { xml: string; _truncated?: boolean }
+        const { xml } = input
+        const serverFlaggedTruncated = input._truncated === true
 
         // DEBUG: Log raw input to diagnose false truncation detection
         if (DEBUG) {
@@ -136,53 +182,73 @@ export function useDiagramToolHandlers({
                 xml.slice(-100),
             )
             console.log("[display_diagram] XML length:", xml.length)
+            console.log(
+                "[display_diagram] serverFlaggedTruncated:",
+                serverFlaggedTruncated,
+            )
         }
 
-        // Check if XML is truncated (incomplete mxCell indicates truncated output)
-        const isTruncated = !isMxCellXmlComplete(xml)
+        // Check if XML is structurally truncated (incomplete mxCell)
+        const isStructurallyTruncated = !isMxCellXmlComplete(xml)
+
+        // Check if content appears truncated even though structurally complete
+        // (model stopped at a valid boundary but had more to generate)
+        const likelyContentTruncated = isLikelyContentTruncated(xml)
+        const isTruncated = isStructurallyTruncated || likelyContentTruncated
+
         if (DEBUG) {
-            console.log("[display_diagram] isTruncated:", isTruncated)
+            console.log(
+                "[display_diagram] isStructurallyTruncated:",
+                isStructurallyTruncated,
+            )
+            console.log(
+                "[display_diagram] likelyContentTruncated:",
+                likelyContentTruncated,
+            )
         }
 
         if (isTruncated) {
             // Store the partial XML for continuation via append_diagram
             partialXmlRef.current = xml
 
-            // Tell LLM to use append_diagram to continue
-            const partialEnding = partialXmlRef.current.slice(-500)
+            // Count cells already generated so the model knows how far along it is
+            const cellCount = (xml.match(/<mxCell\s/g) || []).length
+
+            // CRITICAL: Do NOT show any XML snippet. Showing the truncated XML
+            // tempts the model to "fix" the whole diagram from scratch, causing
+            // infinite regenerate→truncate loops. Just tell it to append.
             addToolOutput({
                 tool: "display_diagram",
                 toolCallId: toolCall.toolCallId,
                 state: "output-error",
-                errorText: `Output was truncated due to length limits. Use the append_diagram tool to continue.
+                errorText: `Your output was truncated due to length limits. You generated ${cellCount} cells so far, but the diagram is not yet complete.
 
-Your output ended with:
-\`\`\`
-${partialEnding}
-\`\`\`
+⚠️ CRITICAL: DO NOT regenerate the entire diagram from scratch.
+DO NOT call display_diagram again with all cells.
 
-NEXT STEP: Call append_diagram with the continuation XML.
-- Do NOT include wrapper tags or root cells (id="0", id="1")
-- Start from EXACTLY where you stopped
-- Complete all remaining mxCell elements`,
+NEXT STEP: Call append_diagram to add ONLY the remaining cells that were NOT yet generated.
+- Just output the missing <mxCell> elements
+- Start IDs from where you left off (next ID after id="${cellCount}")
+- Do NOT include wrapper tags or root cells`,
             })
             return
         }
 
-        // Complete XML received - use it directly
-        // (continuation is now handled via append_diagram tool)
+        // XML is structurally complete - display it
         const finalXml = xml
         partialXmlRef.current = "" // Reset any partial from previous truncation
 
         // Wrap raw XML with full mxfile structure for draw.io
-        const fullXml = wrapWithMxFile(finalXml)
+        let fullXml = wrapWithMxFile(finalXml)
+
+        // Apply auto-layout to reduce cell overlaps before display
+        fullXml = applyAutoLayout(fullXml)
 
         // loadDiagram validates and returns error if invalid
         const validationError = onDisplayChart(fullXml)
 
         if (validationError) {
             console.warn("[display_diagram] Validation error:", validationError)
-            // Return error to model - sendAutomaticallyWhen will trigger retry
             if (DEBUG) {
                 console.log(
                     "[display_diagram] Adding tool output with state: output-error",
@@ -196,17 +262,38 @@ NEXT STEP: Call append_diagram with the continuation XML.
 
 Please fix the XML issues and call display_diagram again with corrected XML.
 
-Your failed XML:
-\`\`\`xml
-${finalXml}
-\`\`\``,
+⚠️ IMPORTANT: Only fix the specific issue mentioned above. Do NOT change the diagram structure or regenerate from scratch.`,
             })
         } else {
-            // Success - diagram will be rendered by chat-message-display
-            if (DEBUG) {
-                console.log(
-                    "[display_diagram] Success! Checking if VLM validation is enabled...",
+            // Diagram displayed successfully
+            if (serverFlaggedTruncated) {
+                // Server detected that jsonrepair discarded data during truncation repair.
+                // The diagram is displayed, but some cells are missing.
+                // Tell the model to continue with append_diagram.
+                console.warn(
+                    "[display_diagram] Server flagged truncation - diagram displayed but some cells were dropped.",
                 )
+
+                const cellCount = (xml.match(/<mxCell\s/g) || []).length
+
+                // CRITICAL: Do NOT show any XML snippet. Showing the truncated XML
+                // tempts the model to "fix" the whole diagram from scratch, causing
+                // infinite regenerate→truncate loops.
+                addToolOutput({
+                    tool: "display_diagram",
+                    toolCallId: toolCall.toolCallId,
+                    state: "output-error",
+                    errorText: `The diagram was displayed (${cellCount} cells), but your output was truncated and some cells were silently dropped.
+
+⚠️ CRITICAL: DO NOT regenerate the entire diagram from scratch.
+DO NOT call display_diagram again with all cells.
+
+NEXT STEP: Call append_diagram to add ONLY the missing cells.
+- Just output the remaining <mxCell> elements that weren't included
+- Start IDs from where you left off
+- Do NOT include wrapper tags or root cells`,
+                })
+                return
             }
 
             // VLM validation after successful display
@@ -360,10 +447,14 @@ ${finalXml}
                     "[display_diagram] Adding tool output with state: output-available",
                 )
             }
+
+            // Debug: include diagram stats in response so user can verify completeness
+            const cellCount = (xml.match(/<mxCell\s/g) || []).length
+            const xmlLen = xml.length
             addToolOutput({
                 tool: "display_diagram",
                 toolCallId: toolCall.toolCallId,
-                output: "Successfully displayed the diagram.",
+                output: `Successfully displayed the diagram. (${cellCount} cells, ${xmlLen.toLocaleString()} chars)`,
             })
             if (DEBUG) {
                 console.log(
@@ -377,8 +468,31 @@ ${finalXml}
         toolCall: ToolCall,
         addToolOutput: AddToolOutputFn,
     ) => {
-        const { operations } = toolCall.input as {
+        const input = toolCall.input as {
             operations: DiagramOperation[]
+            _truncated?: boolean
+        }
+        const { operations, _truncated } = input
+
+        // Server detected that edit_diagram input was truncated.
+        // The operations array is incomplete - some operations were dropped.
+        if (_truncated) {
+            const opCount = operations.length
+            addToolOutput({
+                tool: "edit_diagram",
+                toolCallId: toolCall.toolCallId,
+                state: "output-error",
+                errorText: `Received ${opCount} operations, but your edit_diagram input was truncated - some operations were silently dropped.
+
+⚠️ CRITICAL: DO NOT regenerate the entire diagram.
+DO NOT call display_diagram.
+
+NEXT STEP: Call edit_diagram again with the remaining operations that were NOT included in this batch.
+- Only include the operations that were dropped
+- Use the same operation format (add/update/delete)`,
+            })
+            editDiagramOriginalXmlRef.current.delete(toolCall.toolCallId)
+            return
         }
 
         let currentXml = ""
@@ -422,12 +536,7 @@ ${finalXml}
                     state: "output-error",
                     errorText: `Some operations failed:\n${errorMessages}
 
-Current diagram XML:
-\`\`\`xml
-${currentXml}
-\`\`\`
-
-Please check the cell IDs and retry.`,
+Please check the cell IDs and retry. Do NOT regenerate the entire diagram.`,
                 })
                 // Clean up the shared original XML ref
                 editDiagramOriginalXmlRef.current.delete(toolCall.toolCallId)
@@ -447,22 +556,20 @@ Please check the cell IDs and retry.`,
                     state: "output-error",
                     errorText: `Edit produced invalid XML: ${validationError}
 
-Current diagram XML:
-\`\`\`xml
-${currentXml}
-\`\`\`
-
-Please fix the operations to avoid structural issues.`,
+Please fix the operations to avoid structural issues. Do NOT regenerate the entire diagram.`,
                 })
                 // Clean up the shared original XML ref
                 editDiagramOriginalXmlRef.current.delete(toolCall.toolCallId)
                 return
             }
             onExport()
+            const cellCount = (editedXml.match(/<mxCell\s/g) || []).length
             addToolOutput({
                 tool: "edit_diagram",
                 toolCallId: toolCall.toolCallId,
-                output: `Successfully applied ${operations.length} operation(s) to the diagram.`,
+                output: `Successfully applied ${operations.length} operation(s). Diagram now has ${cellCount} cells.
+
+Diagram is displayed with your changes. No further action needed.`,
             })
             // Clean up the shared original XML ref
             editDiagramOriginalXmlRef.current.delete(toolCall.toolCallId)
@@ -478,12 +585,7 @@ Please fix the operations to avoid structural issues.`,
                 state: "output-error",
                 errorText: `Edit failed: ${errorMessage}
 
-Current diagram XML:
-\`\`\`xml
-${currentXml || "No XML available"}
-\`\`\`
-
-Please check cell IDs and retry, or use display_diagram to regenerate.`,
+Please check cell IDs and retry. Do NOT regenerate the entire diagram.`,
             })
             // Clean up the shared original XML ref even on error
             editDiagramOriginalXmlRef.current.delete(toolCall.toolCallId)
@@ -494,7 +596,33 @@ Please check cell IDs and retry, or use display_diagram to regenerate.`,
         toolCall: ToolCall,
         addToolOutput: AddToolOutputFn,
     ) => {
-        const { xml } = toolCall.input as { xml: string }
+        const input = toolCall.input as { xml: string; _truncated?: boolean }
+        const { xml, _truncated } = input
+
+        // Server detected that this append_diagram output was also truncated.
+        // Even if XML structure looks complete, the model likely had more cells to generate.
+        if (_truncated) {
+            // Still append what we got so far
+            partialXmlRef.current += xml
+
+            const cellCount = (partialXmlRef.current.match(/<mxCell\s/g) || [])
+                .length
+            addToolOutput({
+                tool: "append_diagram",
+                toolCallId: toolCall.toolCallId,
+                state: "output-error",
+                errorText: `Received ${cellCount} cells so far, but your append_diagram output was truncated again.
+
+⚠️ CRITICAL: DO NOT regenerate the entire diagram from scratch.
+DO NOT call display_diagram.
+
+NEXT STEP: Call append_diagram again to add the remaining cells.
+- Continue from exactly where you stopped
+- Just output the remaining <mxCell> elements
+- Do NOT include wrapper tags`,
+            })
+            return
+        }
 
         // Detect if LLM incorrectly started fresh instead of continuing
         // LLM should only output bare mxCells now, so wrapper tags indicate error
@@ -511,14 +639,11 @@ Please check cell IDs and retry, or use display_diagram to regenerate.`,
                 tool: "append_diagram",
                 toolCallId: toolCall.toolCallId,
                 state: "output-error",
-                errorText: `ERROR: You started fresh with wrapper tags. Do NOT include wrapper tags or root cells (id="0", id="1").
+                errorText: `ERROR: You included wrapper tags (mxGraphModel, root, mxCell id="0"/"1").
 
-Continue from EXACTLY where the partial ended:
-\`\`\`
-${partialXmlRef.current.slice(-500)}
-\`\`\`
+DO NOT regenerate the diagram. DO NOT include wrapper tags.
 
-Start your continuation with the NEXT character after where it stopped.`,
+Just output the remaining <mxCell> elements that haven't been generated yet.`,
             })
             return
         }
@@ -534,28 +659,29 @@ Start your continuation with the NEXT character after where it stopped.`,
             const finalXml = partialXmlRef.current
             partialXmlRef.current = "" // Reset
 
-            const fullXml = wrapWithMxFile(finalXml)
+            let fullXml = wrapWithMxFile(finalXml)
+
+            // Apply auto-layout to reduce cell overlaps before display
+            fullXml = applyAutoLayout(fullXml)
+
             const validationError = onDisplayChart(fullXml)
 
             if (validationError) {
+                // Validation error after assembly - the combined XML has issues.
+                // The diagram is still displayed (onDisplayChart was called above).
+                // Use output-available (not error) to prevent the model from trying to "fix" it.
+                const cellCount = (finalXml.match(/<mxCell\s/g) || []).length
                 addToolOutput({
                     tool: "append_diagram",
                     toolCallId: toolCall.toolCallId,
-                    state: "output-error",
-                    errorText: `Validation error after assembly: ${validationError}
-
-Assembled XML:
-\`\`\`xml
-${finalXml.substring(0, 2000)}...
-\`\`\`
-
-Please use display_diagram with corrected XML.`,
+                    output: `Diagram displayed with ${cellCount} cells. Validation warning: ${validationError}. No further action needed.`,
                 })
             } else {
+                const cellCount = (finalXml.match(/<mxCell\s/g) || []).length
                 addToolOutput({
                     tool: "append_diagram",
                     toolCallId: toolCall.toolCallId,
-                    output: "Diagram assembly complete and displayed successfully.",
+                    output: `Diagram assembly complete. Displayed ${cellCount} cells. No further action needed.`,
                 })
             }
         } else {
@@ -564,14 +690,9 @@ Please use display_diagram with corrected XML.`,
                 tool: "append_diagram",
                 toolCallId: toolCall.toolCallId,
                 state: "output-error",
-                errorText: `XML still incomplete (mxCell not closed). Call append_diagram again to continue.
+                errorText: `XML still incomplete (mxCell not closed). Call append_diagram again to continue adding the remaining cells.
 
-Current ending:
-\`\`\`
-${partialXmlRef.current.slice(-500)}
-\`\`\`
-
-Continue from EXACTLY where you stopped.`,
+Do NOT regenerate. Just continue from where you stopped.`,
             })
         }
     }

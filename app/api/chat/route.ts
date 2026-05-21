@@ -500,9 +500,11 @@ IMPORTANT: The "Current diagram XML" is the SINGLE SOURCE OF TRUTH for what's on
     const result = streamText({
         model,
         abortSignal: req.signal,
-        ...(process.env.MAX_OUTPUT_TOKENS && {
-            maxOutputTokens: parseInt(process.env.MAX_OUTPUT_TOKENS, 10),
-        }),
+        // Set explicit maxOutputTokens to prevent premature truncation.
+        // Complex diagrams need 10k-20k+ output tokens. Default to 32k unless env override.
+        maxOutputTokens: process.env.MAX_OUTPUT_TOKENS
+            ? parseInt(process.env.MAX_OUTPUT_TOKENS, 10)
+            : 32000,
         stopWhen: stepCountIs(5),
         // Repair truncated tool calls when maxOutputTokens is reached mid-JSON
         experimental_repairToolCall: async ({ toolCall, error }) => {
@@ -522,6 +524,10 @@ IMPORTANT: The "Current diagram XML" is the SINGLE SOURCE OF TRUTH for what's on
                 try {
                     // Pre-process to fix common LLM JSON errors that jsonrepair can't handle
                     let inputToRepair = toolCall.input
+                    const originalLength =
+                        typeof inputToRepair === "string"
+                            ? inputToRepair.length
+                            : JSON.stringify(inputToRepair).length
                     if (typeof inputToRepair === "string") {
                         // Fix `:=` instead of `: ` (LLM sometimes generates this)
                         inputToRepair = inputToRepair.replace(/:=/g, ": ")
@@ -537,9 +543,105 @@ IMPORTANT: The "Current diagram XML" is the SINGLE SOURCE OF TRUTH for what's on
                     }
                     // Use jsonrepair to fix truncated JSON
                     const repairedInput = jsonrepair(inputToRepair)
+                    const repairedLength =
+                        typeof repairedInput === "string"
+                            ? repairedInput.length
+                            : JSON.stringify(repairedInput).length
+
+                    // Detect if data was discarded during repair (truncation indicator)
+                    // jsonrepair silently discards incomplete trailing content
+                    const lengthDiff = originalLength - repairedLength
+                    // Lowered threshold from 50 to 10 for more sensitive truncation detection.
+                    // When model stops mid-generation (even at a complete JSON boundary),
+                    // any discarded content likely means there were more cells coming.
+                    const wasTruncated = lengthDiff > 10
+
+                    if (wasTruncated) {
+                        console.warn(
+                            `[repairToolCall] Data discarded during repair: ${lengthDiff} chars. Tool input was truncated.`,
+                        )
+                    }
+
+                    // Additional truncation detection: check if the original input ends
+                    // right after a complete mxCell tag, suggesting the model stopped mid-generation.
+                    // Pattern: ends with </mxCell> or /> immediately (no closing wrapper tags).
+                    // This catches cases where jsonrepair discards very little but model had more to say.
+                    // Applies to display_diagram and append_diagram (both output mxCell XML).
+                    let endsAtCellBoundary = false
+                    if (
+                        typeof inputToRepair === "string" &&
+                        (toolCall.toolName === "display_diagram" ||
+                            toolCall.toolName === "append_diagram")
+                    ) {
+                        const trimmed = inputToRepair.trimEnd()
+                        // Check if ends right after </mxCell> or />
+                        endsAtCellBoundary =
+                            trimmed.endsWith("</mxCell>") ||
+                            trimmed.endsWith("/>")
+
+                        // Log for debugging
+                        console.log(
+                            `[repairToolCall] ${toolCall.toolName} endsAtCellBoundary=${endsAtCellBoundary}, lengthDiff=${lengthDiff}, wasTruncated=${wasTruncated}`,
+                        )
+                    }
+
+                    const wasLikelyTruncated =
+                        wasTruncated || (endsAtCellBoundary && lengthDiff > 0)
+
+                    if (endsAtCellBoundary && lengthDiff > 0 && !wasTruncated) {
+                        console.warn(
+                            `[repairToolCall] Model output ended at cell boundary but ${lengthDiff} chars discarded. Likely truncated.`,
+                        )
+                    }
+
                     console.log(
                         `[repairToolCall] Repaired truncated JSON for tool: ${toolCall.toolName}`,
                     )
+
+                    // Inject _truncated flag so client-side handler can signal continuation
+                    if (
+                        toolCall.toolName === "display_diagram" &&
+                        wasLikelyTruncated
+                    ) {
+                        // Parse repaired input, add flag, re-stringify
+                        let parsed
+                        if (typeof repairedInput === "string") {
+                            parsed = JSON.parse(repairedInput)
+                        } else {
+                            parsed = repairedInput
+                        }
+                        parsed._truncated = true
+                        return { ...toolCall, input: JSON.stringify(parsed) }
+                    }
+
+                    if (
+                        toolCall.toolName === "edit_diagram" &&
+                        wasLikelyTruncated
+                    ) {
+                        let parsed
+                        if (typeof repairedInput === "string") {
+                            parsed = JSON.parse(repairedInput)
+                        } else {
+                            parsed = repairedInput
+                        }
+                        parsed._truncated = true
+                        return { ...toolCall, input: JSON.stringify(parsed) }
+                    }
+
+                    if (
+                        toolCall.toolName === "append_diagram" &&
+                        wasLikelyTruncated
+                    ) {
+                        let parsed
+                        if (typeof repairedInput === "string") {
+                            parsed = JSON.parse(repairedInput)
+                        } else {
+                            parsed = repairedInput
+                        }
+                        parsed._truncated = true
+                        return { ...toolCall, input: JSON.stringify(parsed) }
+                    }
+
                     return { ...toolCall, input: repairedInput }
                 } catch (repairError) {
                     console.warn(
@@ -582,7 +684,15 @@ IMPORTANT: The "Current diagram XML" is the SINGLE SOURCE OF TRUTH for what's on
                 userId,
             }),
         }),
-        onFinish: ({ text, totalUsage }) => {
+        onFinish: ({ text, totalUsage, finishReason }) => {
+            // Alert when output was truncated by token limit
+            if (finishReason === "length") {
+                console.warn(
+                    "[onFinish] Output truncated (hit maxOutputTokens limit).",
+                    "Model should auto-continue via append_diagram if client detects incomplete XML.",
+                )
+            }
+
             // AI SDK 6 telemetry auto-reports token usage on its spans
             setTraceOutput(text)
 
@@ -636,6 +746,7 @@ Example (generate ONLY this - no wrapper tags):
 Notes:
 - For AWS diagrams, use **AWS 2025 icons**.
 - For animated connectors, add "flowAnimation=1" to edge style.
+- If your output was truncated (error says "truncated due to length limits"), call append_diagram to continue adding remaining cells from exactly where you stopped.
 `,
                 inputSchema: z.object({
                     xml: z

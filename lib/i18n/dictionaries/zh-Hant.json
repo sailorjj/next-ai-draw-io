@@ -44,6 +44,7 @@
         "clearConversation": "清除對話",
         "diagramHistory": "圖表歷史",
         "saveDiagram": "儲存圖表",
+        "formatDiagram": "自動排列",
         "uploadFile": "上傳檔案（圖片、PDF、文字）",
         "minimalStyle": "簡約",
         "styledMode": "精緻",

@@ -5,6 +5,7 @@ import {
     Download,
     History,
     Image as ImageIcon,
+    Layout,
     Link,
     Send,
     Square,
@@ -36,7 +37,7 @@ import { isPdfFile, isTextFile } from "@/lib/pdf-utils"
 import { STORAGE_KEYS } from "@/lib/storage"
 import type { FlattenedModel } from "@/lib/types/model-config"
 import { extractUrlContent, type UrlData } from "@/lib/url-utils"
-import { isRealDiagram } from "@/lib/utils"
+import { applyAutoLayout, isRealDiagram } from "@/lib/utils"
 import { FilePreviewList } from "./file-preview-list"
 
 const MAX_IMAGE_SIZE = 2 * 1024 * 1024 // 2MB
@@ -207,6 +208,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(
         const dict = useDictionary()
         const {
             chartXML,
+            loadDiagram,
             diagramHistory,
             saveDiagramToFile,
             showSaveDialog,
@@ -240,6 +242,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(
         const [showUrlDialog, setShowUrlDialog] = useState(false)
         const [showSaveAsTemplate, setShowSaveAsTemplate] = useState(false)
         const [isExtractingUrl, setIsExtractingUrl] = useState(false)
+        const [isFormatting, setIsFormatting] = useState(false)
         const [sendShortcut, setSendShortcut] = useState("ctrl-enter")
         // Allow retry when there's an error (even if status is still "streaming" or "submitted")
         const isDisabled =
@@ -359,6 +362,25 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(
 
         const triggerFileInput = () => {
             fileInputRef.current?.click()
+        }
+
+        const handleFormatDiagram = async () => {
+            if (!isRealDiagram(chartXML) || isFormatting) return
+            setIsFormatting(true)
+            try {
+                const layoutXml = applyAutoLayout(chartXML)
+                const error = loadDiagram(layoutXml, true)
+                if (error) {
+                    showErrorToast(`排列失败：${error}`)
+                } else {
+                    toast.success("图表已自动排列")
+                }
+            } catch (e) {
+                console.error("[handleFormatDiagram] Error:", e)
+                showErrorToast("排列过程中发生错误")
+            } finally {
+                setIsFormatting(false)
+            }
         }
 
         const handleDragOver = (e: React.DragEvent<HTMLFormElement>) => {
@@ -552,6 +574,22 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(
                                 className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
                             >
                                 <BookmarkPlus className="h-4 w-4" />
+                            </ButtonWithTooltip>
+
+                            <ButtonWithTooltip
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={handleFormatDiagram}
+                                disabled={
+                                    isDisabled ||
+                                    !isRealDiagram(chartXML) ||
+                                    isFormatting
+                                }
+                                tooltipContent={dict.chat.formatDiagram}
+                                className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                            >
+                                <Layout className="h-4 w-4" />
                             </ButtonWithTooltip>
 
                             <input

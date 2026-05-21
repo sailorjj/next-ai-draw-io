@@ -44,6 +44,7 @@
         "clearConversation": "会話をクリア",
         "diagramHistory": "ダイアグラム履歴",
         "saveDiagram": "ダイアグラムを保存",
+        "formatDiagram": "自動レイアウト",
         "uploadFile": "ファイルをアップロード（画像、PDF、テキスト）",
         "minimalStyle": "ミニマル",
         "styledMode": "スタイル付き",

@@ -44,6 +44,7 @@
         "clearConversation": "Clear conversation",
         "diagramHistory": "Diagram history",
         "saveDiagram": "Save diagram",
+        "formatDiagram": "Auto layout",
         "uploadFile": "Upload file (image, PDF, text)",
         "minimalStyle": "Minimal",
         "styledMode": "Styled",

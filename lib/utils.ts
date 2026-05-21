@@ -420,6 +420,7 @@ export function replaceNodes(currentXML: string, nodes: string): string {
         }
 
         // Clear all existing child elements from the current root
+        if (!currentRoot) throw new Error("Could not find or create root")
         while (currentRoot.firstChild) {
             currentRoot.removeChild(currentRoot.firstChild)
         }
@@ -564,9 +565,21 @@ export function applyDiagramOperations(
                 continue
             }
 
+            // Auto-fix new_xml before parsing (unescaped quotes etc.)
+            const autoFixResultUpdate = autoFixXml(op.new_xml)
+            const fixedNewXml =
+                autoFixResultUpdate.fixes.length > 0
+                    ? autoFixResultUpdate.fixed
+                    : op.new_xml
+            if (autoFixResultUpdate.fixes.length > 0) {
+                console.log(
+                    `[applyDiagramOperations] Auto-fixed new_xml for cell_id="${op.cell_id}": ${autoFixResultUpdate.fixes.join(", ")}`,
+                )
+            }
+
             // Parse the new XML
             const newDoc = parser.parseFromString(
-                `<wrapper>${op.new_xml}</wrapper>`,
+                `<wrapper>${fixedNewXml}</wrapper>`,
                 "text/xml",
             )
             const newCell = newDoc.querySelector("mxCell")
@@ -616,9 +629,21 @@ export function applyDiagramOperations(
                 continue
             }
 
+            // Auto-fix new_xml before parsing (unescaped quotes etc.)
+            const autoFixResultAdd = autoFixXml(op.new_xml)
+            const fixedNewXmlAdd =
+                autoFixResultAdd.fixes.length > 0
+                    ? autoFixResultAdd.fixed
+                    : op.new_xml
+            if (autoFixResultAdd.fixes.length > 0) {
+                console.log(
+                    `[applyDiagramOperations] Auto-fixed new_xml for cell_id="${op.cell_id}": ${autoFixResultAdd.fixes.join(", ")}`,
+                )
+            }
+
             // Parse the new XML
             const newDoc = parser.parseFromString(
-                `<wrapper>${op.new_xml}</wrapper>`,
+                `<wrapper>${fixedNewXmlAdd}</wrapper>`,
                 "text/xml",
             )
             const newCell = newDoc.querySelector("mxCell")
@@ -638,6 +663,22 @@ export function applyDiagramOperations(
                     type: "add",
                     cellId: op.cell_id,
                     message: `ID mismatch: cell_id is "${op.cell_id}" but new_xml has id="${newCellId}"`,
+                })
+                continue
+            }
+
+            // Validate parent exists (if specified)
+            const parentAttr = newCell.getAttribute("parent")
+            if (
+                parentAttr &&
+                parentAttr !== "0" &&
+                parentAttr !== "1" &&
+                !cellMap.has(parentAttr)
+            ) {
+                errors.push({
+                    type: "add",
+                    cellId: op.cell_id,
+                    message: `Parent "${parentAttr}" does not exist in the current diagram`,
                 })
                 continue
             }
@@ -728,6 +769,435 @@ export function applyDiagramOperations(
     const result = serializer.serializeToString(doc)
 
     return { result, errors }
+}
+
+// ============================================================================
+// Layout Post-Processing (整形) Algorithm
+// ============================================================================
+
+/**
+ * 基于碰撞消除的增量布局算法。
+ *
+ * 核心原则：
+ * 1. 保留模型生成的原始布局意图（位置、分组、语义关系）
+ * 2. 只对有碰撞的元素做最小位移调整
+ * 3. 先处理容器内子节点碰撞，再调整容器尺寸适配
+ * 4. 最后处理顶层元素碰撞
+ * 5. 边不修改
+ *
+ * draw.io 关键特性：子节点坐标是相对于父容器的。
+ */
+
+const LAYOUT_GAP = 30
+const LAYOUT_CONTAINER_PADDING = 30
+
+interface CellGeo {
+    id: string
+    parent: string
+    x: number
+    y: number
+    w: number
+    h: number
+}
+
+function rectsOverlap(a: CellGeo, b: CellGeo): boolean {
+    return (
+        a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
+    )
+}
+
+function parseAllCells(doc: Document): CellGeo[] {
+    const cells: CellGeo[] = []
+    doc.querySelectorAll("mxCell").forEach((el) => {
+        const id = el.getAttribute("id") || ""
+        if (id === "0" || id === "1") return
+        const geo = el.querySelector("mxGeometry")
+        if (!geo) return
+        const w = parseFloat(geo.getAttribute("width") || "0") || 0
+        const h = parseFloat(geo.getAttribute("height") || "0") || 0
+        if (w === 0 && h === 0) return
+        cells.push({
+            id,
+            parent: el.getAttribute("parent") || "",
+            x: parseFloat(geo.getAttribute("x") || "0") || 0,
+            y: parseFloat(geo.getAttribute("y") || "0") || 0,
+            w,
+            h,
+        })
+    })
+    return cells
+}
+
+function getCellEl(doc: Document, id: string): Element | null {
+    return doc.querySelector(`mxCell[id="${id}"]`)
+}
+
+function setGeo(el: Element, x: number, y: number, w?: number, h?: number) {
+    let geo = el.querySelector("mxGeometry")
+    if (!geo) {
+        geo = el.ownerDocument.createElement("mxGeometry")
+        geo.setAttribute("as", "geometry")
+        el.appendChild(geo)
+    }
+    geo.setAttribute("x", String(Math.round(x)))
+    geo.setAttribute("y", String(Math.round(y)))
+    if (w !== undefined) geo.setAttribute("width", String(Math.round(w)))
+    if (h !== undefined) geo.setAttribute("height", String(Math.round(h)))
+}
+
+function isContainerCell(el: Element, childrenCount: number): boolean {
+    if (childrenCount === 0) return false
+    const style = el.getAttribute("style") || ""
+    if (style.includes("startSize")) return true
+    const vertex = el.getAttribute("vertex") === "1"
+    if (vertex && childrenCount >= 2) return true
+    return false
+}
+
+/**
+ * 判断是否为顶层容器（用于阶段 2 区分容器和独立节点）。
+ * 不依赖 childrenCount（因为顶层容器可能不在 childrenMap 中），
+ * 而是检查 style 是否包含 startSize，或是否是其他 vertex 元素的 parent。
+ */
+function isTopLevelContainer(
+    el: Element,
+    elMap: Map<string, Element | null>,
+    cells: CellGeo[],
+): boolean {
+    // 方式 1：检查 style 是否包含 startSize（draw.io 容器标志）
+    const style = el.getAttribute("style") || ""
+    if (style.includes("startSize")) return true
+    // 方式 2：检查是否是其他 vertex 元素的 parent
+    const id = el.getAttribute("id")
+    if (id) {
+        const hasChildVertex = cells.some((c) => {
+            if (c.parent !== id) return false
+            const childEl = elMap.get(c.id)
+            return childEl && childEl.getAttribute("vertex") === "1"
+        })
+        if (hasChildVertex) return true
+    }
+    return false
+}
+
+/**
+ * 将一组几何体按 y 坐标分组为"行"。
+ * 两个元素中心 y 距离小于阈值时视为同一行。
+ */
+function groupIntoRows(geos: CellGeo[], rowThreshold: number): CellGeo[][] {
+    const sorted = [...geos].sort((a, b) => a.y + a.h / 2 - (b.y + b.h / 2))
+    const rows: CellGeo[][] = []
+    for (const g of sorted) {
+        const centerY = g.y + g.h / 2
+        // 尝试放入已有行：与该行第一个元素的中心 y 距离在阈值内
+        let placed = false
+        for (const row of rows) {
+            const rowRefY = row[0].y + row[0].h / 2
+            if (Math.abs(centerY - rowRefY) < rowThreshold) {
+                row.push(g)
+                placed = true
+                break
+            }
+        }
+        if (!placed) {
+            rows.push([g])
+        }
+    }
+    return rows
+}
+
+/**
+ * 消除一组兄弟节点之间的碰撞。
+ *
+ * 策略：
+ * 1. 按 y 坐标将元素分组为"行"（中心 y 距离 < 最大高度的一半视为同行）
+ * 2. 对每行内元素按 x 排序，消除水平碰撞（将右侧节点向右推）
+ * 3. 对不同行之间消除垂直碰撞（将下方行整体向下推，保持行内相对位置）
+ * 4. 保持最小位移，避免级联偏移过大
+ */
+function resolveSiblingCollisions(geos: CellGeo[], gap: number) {
+    if (geos.length < 2) return
+
+    // 动态计算行分组阈值：取所有元素最小高度的 30%，只有 y 非常接近的才算同行
+    const minHeight = Math.min(...geos.map((g) => g.h))
+    const rowThreshold = Math.max(minHeight * 0.3, 1)
+
+    // 步骤 1：按 y 分组为行
+    const rows = groupIntoRows(geos, rowThreshold)
+
+    // 步骤 2：对每行内元素按 x 排序，消除水平碰撞
+    for (const row of rows) {
+        if (row.length < 2) continue
+        row.sort((a, b) => a.x - b.x)
+        for (let i = 0; i < row.length - 1; i++) {
+            const a = row[i]
+            const b = row[i + 1]
+            // 只检查水平方向是否重叠（同行元素 y 方向已有间隙）
+            const overlapX = a.x + a.w - b.x
+            if (overlapX > 0) {
+                const push = overlapX + gap
+                b.x += push
+            }
+        }
+    }
+
+    // 步骤 3：消除不同行之间的垂直碰撞
+    // 对行按 y 排序后，依次检查相邻行之间是否有垂直重叠
+    if (rows.length < 2) return
+    rows.sort((a, b) => a[0].y + a[0].h / 2 - (b[0].y + b[0].h / 2))
+
+    for (let r = 0; r < rows.length - 1; r++) {
+        const upperRow = rows[r]
+        const lowerRow = rows[r + 1]
+
+        // 上行的最底端
+        const upperBottom = Math.max(...upperRow.map((g) => g.y + g.h))
+        // 下行的最顶端
+        const lowerTop = Math.min(...lowerRow.map((g) => g.y))
+
+        const overlapY = upperBottom - lowerTop
+        if (overlapY > 0) {
+            const push = overlapY + gap
+            // 将下行所有元素整体下移
+            for (const g of lowerRow) {
+                g.y += push
+            }
+        }
+    }
+}
+
+/**
+ * 调整容器尺寸以适配其子节点 + 内边距。
+ * 同时确保容器内没有子节点超出边界。
+ */
+function fitContainerToChildren(
+    containerEl: Element,
+    children: CellGeo[],
+    padding: number,
+) {
+    if (children.length === 0) return
+
+    let minX = Infinity,
+        minY = Infinity,
+        maxX = -Infinity,
+        maxY = -Infinity
+    for (const c of children) {
+        minX = Math.min(minX, c.x)
+        minY = Math.min(minY, c.y)
+        maxX = Math.max(maxX, c.x + c.w)
+        maxY = Math.max(maxY, c.y + c.h)
+    }
+
+    const neededW = Math.max(maxX - minX, 0) + padding * 2
+    const neededH = Math.max(maxY - minY, 0) + padding * 2
+
+    const geo = containerEl.querySelector("mxGeometry")
+    if (!geo) return
+
+    const curW = parseFloat(geo.getAttribute("width") || "0") || 0
+    const curH = parseFloat(geo.getAttribute("height") || "0") || 0
+
+    // 只扩大不缩小，保留模型设定的尺寸意图
+    const newW = Math.max(curW, neededW)
+    const newH = Math.max(curH, neededH)
+
+    geo.setAttribute("width", String(Math.round(newW)))
+    geo.setAttribute("height", String(Math.round(newH)))
+
+    // 如果子节点有负坐标（超出容器左/上边界），整体偏移子节点
+    if (minX < padding) {
+        const offsetX = padding - minX
+        for (const c of children) {
+            const el = getCellEl(containerEl.ownerDocument, c.id)
+            if (el) {
+                const cGeo = el.querySelector("mxGeometry")
+                if (cGeo) {
+                    const cx = parseFloat(cGeo.getAttribute("x") || "0") || 0
+                    cGeo.setAttribute("x", String(Math.round(cx + offsetX)))
+                }
+            }
+        }
+    }
+    if (minY < padding) {
+        const offsetY = padding - minY
+        for (const c of children) {
+            const el = getCellEl(containerEl.ownerDocument, c.id)
+            if (el) {
+                const cGeo = el.querySelector("mxGeometry")
+                if (cGeo) {
+                    const cy = parseFloat(cGeo.getAttribute("y") || "0") || 0
+                    cGeo.setAttribute("y", String(Math.round(cy + offsetY)))
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 对 draw.io 图表 XML 进行自动布局。
+ * 只做碰撞消除，保留原始布局意图。
+ *
+ * @param xml - 完整 mxfile XML 或纯 mxCell XML
+ * @returns 重新布局后的 XML
+ */
+export function applyAutoLayout(xml: string): string {
+    if (!xml || !xml.trim()) return xml
+
+    const parser = new DOMParser()
+    const doc = parser.parseFromString(xml, "text/xml")
+    if (doc.querySelector("parsererror")) {
+        console.warn("[applyAutoLayout] XML 解析失败，跳过布局")
+        return xml
+    }
+
+    const cells = parseAllCells(doc)
+    if (cells.length === 0) return xml
+
+    // 构建 parent → children 映射
+    const childrenMap = new Map<string, CellGeo[]>()
+    for (const cell of cells) {
+        if (!childrenMap.has(cell.parent)) childrenMap.set(cell.parent, [])
+        childrenMap.get(cell.parent)!.push(cell)
+    }
+
+    // 构建 id → element 映射
+    const elMap = new Map<string, Element>()
+    doc.querySelectorAll("mxCell").forEach((el) => {
+        const id = el.getAttribute("id") || ""
+        if (id) elMap.set(id, el)
+    })
+
+    // 阶段 1：处理每个容器内部的子节点碰撞 + 容器尺寸适配
+    for (const [parentId, children] of childrenMap) {
+        const parentEl = elMap.get(parentId)
+        if (!parentEl) continue
+
+        const vertexChildren = children.filter((c) => {
+            const el = elMap.get(c.id)
+            return (
+                el &&
+                el.getAttribute("vertex") === "1" &&
+                el.getAttribute("edge") !== "1"
+            )
+        })
+
+        if (!isContainerCell(parentEl, vertexChildren.length)) continue
+
+        // 1a. 递归处理嵌套容器
+        const nestedContainers = vertexChildren.filter((c) => {
+            const nestedChildren = childrenMap.get(c.id)
+            if (!nestedChildren) return false
+            const nestedEl = elMap.get(c.id)
+            return (
+                nestedEl &&
+                isContainerCell(
+                    nestedEl,
+                    nestedChildren.filter((nc) => {
+                        const nEl = elMap.get(nc.id)
+                        return nEl && nEl.getAttribute("vertex") === "1"
+                    }).length,
+                )
+            )
+        })
+
+        for (const nc of nestedContainers) {
+            const ncChildren = childrenMap.get(nc.id) || []
+            const ncVertex = ncChildren.filter((c) => {
+                const el = elMap.get(c.id)
+                return el && el.getAttribute("vertex") === "1"
+            })
+            resolveSiblingCollisions(ncVertex, LAYOUT_GAP)
+            const ncEl = elMap.get(nc.id)
+            if (ncEl)
+                fitContainerToChildren(ncEl, ncVertex, LAYOUT_CONTAINER_PADDING)
+            // 同步嵌套容器的子节点位置到 DOM
+            for (const c of ncVertex) {
+                const el = elMap.get(c.id)
+                if (el) setGeo(el, c.x, c.y)
+            }
+        }
+
+        // 1b. 消除子节点碰撞
+        resolveSiblingCollisions(vertexChildren, LAYOUT_GAP)
+
+        // 1b2. 将碰撞消除后的位置写回 DOM
+        for (const c of vertexChildren) {
+            const el = elMap.get(c.id)
+            if (el) {
+                setGeo(el, c.x, c.y)
+            }
+        }
+
+        // 1c. 调整容器尺寸适配子节点
+        fitContainerToChildren(
+            parentEl,
+            vertexChildren,
+            LAYOUT_CONTAINER_PADDING,
+        )
+
+        // 1d. 重新读取更新后的 geometry（包括 fitContainerToChildren 可能的偏移）
+        for (const c of children) {
+            const el = elMap.get(c.id)
+            if (!el) continue
+            const geo = el.querySelector("mxGeometry")
+            if (!geo) continue
+            c.x = parseFloat(geo.getAttribute("x") || "0") || 0
+            c.y = parseFloat(geo.getAttribute("y") || "0") || 0
+            c.w = parseFloat(geo.getAttribute("width") || "0") || 0
+            c.h = parseFloat(geo.getAttribute("height") || "0") || 0
+        }
+    }
+
+    // 阶段 2：处理顶层元素（parent="1"）的碰撞
+    const topCells = cells.filter((c) => c.parent === "1")
+    const topVertex = topCells.filter((c) => {
+        const el = elMap.get(c.id)
+        return (
+            el &&
+            el.getAttribute("vertex") === "1" &&
+            el.getAttribute("edge") !== "1"
+        )
+    })
+
+    // 将顶层元素分为容器和独立节点
+    const topContainers: CellGeo[] = []
+    const topStandaloneNodes: CellGeo[] = []
+    for (const c of topVertex) {
+        const el = elMap.get(c.id)
+        if (el && isTopLevelContainer(el, elMap, cells)) {
+            topContainers.push(c)
+        } else {
+            topStandaloneNodes.push(c)
+        }
+    }
+
+    // 只对独立节点做碰撞消除（容器之间不碰撞消除）
+    if (topStandaloneNodes.length >= 2) {
+        resolveSiblingCollisions(topStandaloneNodes, LAYOUT_GAP)
+        for (const c of topStandaloneNodes) {
+            const el = elMap.get(c.id)
+            if (el) setGeo(el, c.x, c.y)
+        }
+    }
+
+    // 容器只做尺寸适配，不做位移
+    for (const c of topContainers) {
+        const el = elMap.get(c.id)
+        if (el) {
+            const containerChildren = childrenMap.get(c.id) || []
+            const containerVertex = containerChildren.filter((cc) => {
+                const ccEl = elMap.get(cc.id)
+                return ccEl && ccEl.getAttribute("vertex") === "1"
+            })
+            fitContainerToChildren(
+                el,
+                containerVertex,
+                LAYOUT_CONTAINER_PADDING,
+            )
+        }
+    }
+
+    return new XMLSerializer().serializeToString(doc)
 }
 
 // ============================================================================
@@ -890,7 +1360,7 @@ export function validateMxCellStructure(xml: string): string | null {
         const doc = parser.parseFromString(xml, "text/xml")
         const parseError = doc.querySelector("parsererror")
         if (parseError) {
-            return `Invalid XML: The XML contains syntax errors (likely unescaped special characters like <, >, & in attribute values). Please escape special characters: use &lt; for <, &gt; for >, &amp; for &, &quot; for ". Regenerate the diagram with properly escaped values.`
+            return `Invalid XML: The XML contains syntax errors (likely unescaped special characters). Please escape: < → &lt;, > → &gt;, & → &amp;, " → &quot;. WARNING: DO NOT regenerate the entire diagram. Only re-output the specific cell(s) with unescaped characters.`
         }
 
         // DOM-based checks for nested mxCell
@@ -1121,6 +1591,66 @@ export function autoFixXml(xml: string): { fixed: string; fixes: string[] } {
     if (quotedColorPattern.test(fixed)) {
         fixed = fixed.replace(/;([a-zA-Z]*[Cc]olor)="#/g, ";$1=#")
         fixes.push("Removed quotes around color values in style")
+    }
+
+    // 3f. Fix unescaped quotes inside attribute values
+    // This handles cases like value="text "quoted" text" where inner quotes
+    // should be escaped as &quot; to prevent XML parsing errors
+    // IMPORTANT: Skip quotes that are already part of &quot; entities
+    const hasUnescapedInnerQuotes = /="\s*[^"]*"[^"'\s>]/.test(fixed)
+    if (hasUnescapedInnerQuotes) {
+        let result = ""
+        let i = 0
+
+        while (i < fixed.length) {
+            const c = fixed[i]
+
+            if (c === '"' && i > 0 && fixed[i - 1] === "=") {
+                // Opening quote of an attribute value
+                result += c
+                i++
+                continue
+            }
+
+            if (c === '"') {
+                // Check if this quote is part of &quot; entity (already escaped)
+                // Look back: if preceded by &amp or just &, skip it
+                const precededByEntity =
+                    fixed.slice(Math.max(0, i - 6), i).endsWith("&amp") ||
+                    fixed.slice(Math.max(0, i - 5), i).endsWith("&")
+                // Look ahead: if this is &quot;, the next chars are uot;
+                const isQuotEntity = fixed.slice(i + 1, i + 5) === "uot;"
+                if (precededByEntity && isQuotEntity) {
+                    // This is already &quot; - keep as-is
+                    result += c
+                    i++
+                    continue
+                }
+
+                // Check if this is a closing quote (delimiter)
+                // A closing quote is followed by: space+attr_name= OR > OR />
+                const lookahead = fixed.slice(i + 1)
+                const isFollowedByAttr =
+                    /^[\s\n][a-zA-Z_][a-zA-Z0-9_:-]*\s*=/.test(lookahead)
+                const isFollowedByTagEnd = /^[\s\n]*\/?>/.test(lookahead)
+
+                if (isFollowedByAttr || isFollowedByTagEnd) {
+                    // Closing quote - keep as delimiter
+                    result += c
+                } else {
+                    // Content quote - escape it
+                    result += "&quot;"
+                }
+                i++
+                continue
+            }
+
+            result += c
+            i++
+        }
+
+        fixed = result
+        fixes.push("Escaped unescaped quotes inside attribute values")
     }
 
     // 4. Fix unescaped < and > in attribute values

@@ -260,6 +260,17 @@ export function ToolCallCard({
                         </pre>
                     </div>
                 )}
+            {/* Show display_diagram summary on success */}
+            {output &&
+                toolName === "display_diagram" &&
+                state === "output-available" &&
+                isExpanded && (
+                    <div className="px-4 py-2 border-t border-border/40">
+                        <div className="text-xs text-muted-foreground">
+                            {output}
+                        </div>
+                    </div>
+                )}
         </div>
     )
 }

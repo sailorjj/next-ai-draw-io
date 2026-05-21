@@ -255,7 +255,7 @@ export function validateMxCellStructure(xml: string): string | null {
         const doc = parser.parseFromString(xml, "text/xml")
         const parseError = doc.querySelector("parsererror")
         if (parseError) {
-            return `Invalid XML: The XML contains syntax errors (likely unescaped special characters like <, >, & in attribute values). Please escape special characters: use &lt; for <, &gt; for >, &amp; for &, &quot; for ". Regenerate the diagram with properly escaped values.`
+            return `Invalid XML: The XML contains syntax errors (likely unescaped special characters). Please escape: < → &lt;, > → &gt;, & → &amp;, " → &quot;. ⚠️ CRITICAL: DO NOT regenerate the entire diagram. Only re-output the specific cell(s) with unescaped characters.`
         }
 
         // DOM-based checks for nested mxCell
@@ -459,7 +459,67 @@ export function autoFixXml(xml: string): { fixed: string; fixes: string[] } {
         fixes.push("Removed quotes around color values in style")
     }
 
-    // 10. Fix unescaped < and > in attribute values
+    // 11. Fix unescaped quotes inside attribute values
+    // This handles cases like value="text "quoted" text" where inner quotes
+    // should be escaped as &quot; to prevent XML parsing errors
+    // IMPORTANT: Skip quotes that are already part of &quot; entities
+    {
+        const hasUnescapedInnerQuotes = /="\s*[^"]*"[^"'\s>]/.test(fixed)
+        if (hasUnescapedInnerQuotes) {
+            let result = ""
+            let i = 0
+
+            while (i < fixed.length) {
+                const c = fixed[i]
+
+                if (c === '"' && i > 0 && fixed[i - 1] === "=") {
+                    // Opening quote of an attribute value
+                    result += c
+                    i++
+                    continue
+                }
+
+                if (c === '"') {
+                    // Check if this quote is part of &quot; entity (already escaped)
+                    const precededByEntity =
+                        fixed.slice(Math.max(0, i - 6), i).endsWith("&amp") ||
+                        fixed.slice(Math.max(0, i - 5), i).endsWith("&")
+                    const isQuotEntity = fixed.slice(i + 1, i + 5) === "uot;"
+                    if (precededByEntity && isQuotEntity) {
+                        // This is already &quot; - keep as-is
+                        result += c
+                        i++
+                        continue
+                    }
+
+                    // Check if this is a closing quote (delimiter)
+                    // A closing quote is followed by: space+attr_name= OR > OR />
+                    const lookahead = fixed.slice(i + 1)
+                    const isFollowedByAttr =
+                        /^[\s\n][a-zA-Z_][a-zA-Z0-9_:-]*\s*=/.test(lookahead)
+                    const isFollowedByTagEnd = /^[\s\n]*\/?>/.test(lookahead)
+
+                    if (isFollowedByAttr || isFollowedByTagEnd) {
+                        // Closing quote - keep as delimiter
+                        result += c
+                    } else {
+                        // Content quote - escape it
+                        result += "&quot;"
+                    }
+                    i++
+                    continue
+                }
+
+                result += c
+                i++
+            }
+
+            fixed = result
+            fixes.push("Escaped unescaped quotes inside attribute values")
+        }
+    }
+
+    // 12. Fix unescaped < and > in attribute values
     // < is required to be escaped, > is not strictly required but we escape for consistency
     const attrPattern = /(=\s*")([^"]*?)(<)([^"]*?)(")/g
     let attrMatch
@@ -478,7 +538,7 @@ export function autoFixXml(xml: string): { fixed: string; fixes: string[] } {
         fixes.push("Escaped <> characters in attribute values")
     }
 
-    // 11. Fix invalid hex character references
+    // 13. Fix invalid hex character references
     const invalidHexRefs: string[] = []
     fixed = fixed.replace(/&#x([^;]*);/g, (match, hex) => {
         if (/^[0-9a-fA-F]+$/.test(hex) && hex.length > 0) {
@@ -493,7 +553,7 @@ export function autoFixXml(xml: string): { fixed: string; fixes: string[] } {
         )
     }
 
-    // 12. Fix invalid decimal character references
+    // 14. Fix invalid decimal character references
     const invalidDecRefs: string[] = []
     fixed = fixed.replace(/&#([^x][^;]*);/g, (match, dec) => {
         if (/^[0-9]+$/.test(dec) && dec.length > 0) {
@@ -508,7 +568,7 @@ export function autoFixXml(xml: string): { fixed: string; fixes: string[] } {
         )
     }
 
-    // 13. Fix invalid comment syntax
+    // 15. Fix invalid comment syntax
     fixed = fixed.replace(/<!--([\s\S]*?)-->/g, (match, content) => {
         if (/--/.test(content)) {
             let fixedContent = content
@@ -521,7 +581,7 @@ export function autoFixXml(xml: string): { fixed: string; fixes: string[] } {
         return match
     })
 
-    // 14. Fix <Cell> tags to <mxCell>
+    // 16. Fix <Cell> tags to <mxCell>
     const hasCellTags = /<\/?Cell[\s>]/i.test(fixed)
     if (hasCellTags) {
         fixed = fixed.replace(/<Cell(\s)/gi, "<mxCell$1")
@@ -530,7 +590,7 @@ export function autoFixXml(xml: string): { fixed: string; fixes: string[] } {
         fixes.push("Fixed <Cell> tags to <mxCell>")
     }
 
-    // 15. Fix common closing tag typos (MUST run before foreign tag removal)
+    // 17. Fix common closing tag typos (MUST run before foreign tag removal)
     const tagTypos = [
         { wrong: /<\/mxElement>/gi, right: "</mxCell>", name: "</mxElement>" },
         { wrong: /<\/mxcell>/g, right: "</mxCell>", name: "</mxcell>" },
@@ -554,7 +614,7 @@ export function autoFixXml(xml: string): { fixed: string; fixes: string[] } {
         }
     }
 
-    // 16. Remove non-draw.io tags (after typo fixes so lowercase variants are fixed first)
+    // 18. Remove non-draw.io tags (after typo fixes so lowercase variants are fixed first)
     const validDrawioTags = new Set([
         "mxfile",
         "diagram",
@@ -586,7 +646,7 @@ export function autoFixXml(xml: string): { fixed: string; fixes: string[] } {
         )
     }
 
-    // 17. Fix unclosed tags
+    // 19. Fix unclosed tags
     const tagStack: string[] = []
     const parsedTags = parseXmlTags(fixed)
 
@@ -623,7 +683,7 @@ export function autoFixXml(xml: string): { fixed: string; fixes: string[] } {
         }
     }
 
-    // 18. Remove extra closing tags
+    // 20. Remove extra closing tags
     const tagCounts = new Map<
         string,
         { opens: number; closes: number; selfClosing: number }
@@ -675,7 +735,7 @@ export function autoFixXml(xml: string): { fixed: string; fixes: string[] } {
         }
     }
 
-    // 19. Remove trailing garbage after last XML tag
+    // 21. Remove trailing garbage after last XML tag
     const closingTagPattern = /<\/[a-zA-Z][a-zA-Z0-9]*>|\/>/g
     let lastValidTagEnd = -1
     let closingMatch
@@ -690,7 +750,7 @@ export function autoFixXml(xml: string): { fixed: string; fixes: string[] } {
         }
     }
 
-    // 20. Fix nested mxCell by flattening
+    // 22. Fix nested mxCell by flattening
     const lines = fixed.split("\n")
     let newLines: string[] = []
     let nestedFixed = 0
@@ -730,7 +790,7 @@ export function autoFixXml(xml: string): { fixed: string; fixes: string[] } {
         fixes.push(`Flattened ${nestedFixed} duplicate-ID nested mxCell(s)`)
     }
 
-    // 21. Fix true nested mxCell (different IDs)
+    // 23. Fix true nested mxCell (different IDs)
     const lines2 = fixed.split("\n")
     newLines = []
     let trueNestedFixed = 0
@@ -770,7 +830,7 @@ export function autoFixXml(xml: string): { fixed: string; fixes: string[] } {
         fixes.push(`Fixed ${trueNestedFixed} true nested mxCell(s)`)
     }
 
-    // 22. Fix duplicate IDs by appending suffix
+    // 24. Fix duplicate IDs by appending suffix
     const seenIds = new Map<string, number>()
     const duplicateIds: string[] = []
 
@@ -801,7 +861,7 @@ export function autoFixXml(xml: string): { fixed: string; fixes: string[] } {
         fixes.push(`Renamed ${duplicateIds.length} duplicate ID(s)`)
     }
 
-    // 23. Fix empty id attributes
+    // 25. Fix empty id attributes
     let emptyIdCount = 0
     fixed = fixed.replace(
         /<mxCell([^>]*)\sid\s*=\s*["']\s*["']([^>]*)>/g,
@@ -815,7 +875,7 @@ export function autoFixXml(xml: string): { fixed: string; fixes: string[] } {
         fixes.push(`Generated ${emptyIdCount} missing ID(s)`)
     }
 
-    // 24. Aggressive: drop broken mxCell elements
+    // 26. Aggressive: drop broken mxCell elements
     if (typeof DOMParser !== "undefined") {
         let droppedCells = 0
         let maxIterations = MAX_DROP_ITERATIONS
